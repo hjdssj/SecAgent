@@ -1,0 +1,14 @@
+{
+  "event_id": "evt-demo-0001",
+  "timestamp": "2026-03-10T12:30:21Z",
+  "source_ip": "45.67.89.10",
+  "method": "GET",
+  "url": "/login?id=1' OR '1'='1",
+  "path": "/login",
+  "query": "id=1' OR '1'='1",
+  "status": 403,
+  "user_agent": "sqlmap/1.7",
+  "waf_rule_id": "942100",
+  "waf_message": "SQL Injection Attack Detected",
+  "raw_log": "GET /login?id=1' OR '1'='1 HTTP/1.1"
+}

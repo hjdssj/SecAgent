@@ -1,0 +1,253 @@
+from uuid import uuid4
+
+from app.models.alert import MitreTechnique, SecurityAlert
+from app.models.event import ParsedSecurityEvent
+
+
+class DecisionAgent:
+    """
+    将解析后的安全事件转换为最终安全告警。
+
+    Parameters:
+     None
+
+    Returns:
+     一个用于执行风险评分、ATT&CK 映射和处置建议生成的决策 Agent 实例
+
+    Raises:
+     None
+    """
+
+    BASE_SCORES = {
+        "Command Injection": 90,
+        "SQL Injection": 82,
+        "Path Traversal": 76,
+        "XSS": 68,
+        "Automated Scanner": 55,
+        "Unknown": 25,
+    }
+
+    MITRE_MAPPING = {
+        "SQL Injection": MitreTechnique(
+            technique_id="T1190",
+            name="Exploit Public-Facing Application",
+        ),
+        "Path Traversal": MitreTechnique(
+            technique_id="T1190",
+            name="Exploit Public-Facing Application",
+        ),
+        "XSS": MitreTechnique(
+            technique_id="T1189",
+            name="Drive-by Compromise",
+        ),
+        "Command Injection": MitreTechnique(
+            technique_id="T1059",
+            name="Command and Scripting Interpreter",
+        ),
+    }
+
+    def decide(self, parsed: ParsedSecurityEvent) -> SecurityAlert:
+        """
+        根据解析后的安全事件生成最终安全告警。
+
+        Parameters:
+         parsed - LogParserAgent 输出的解析后安全事件
+
+        Returns:
+         包含攻击类型、风险等级、证据、ATT&CK 映射和处置建议的安全告警
+
+        Raises:
+         None
+        """
+
+        event = parsed.event
+        risk_score = self._score(parsed)
+        risk_level = self._level(risk_score)
+        target = event.path or event.url or "unknown"
+        event_id = event.event_id or f"event-{uuid4().hex[:12]}"
+        mitre = self._map_mitre(parsed.attack_type)
+        recommendations = self._recommendations(
+            parsed.attack_type,
+            event.source_ip,
+            target,
+        )
+        report_markdown = self._build_report(
+            parsed,
+            risk_score,
+            risk_level,
+            recommendations,
+        )
+
+        return SecurityAlert(
+            alert_id=f"alert-{uuid4().hex[:12]}",
+            event_id=event_id,
+            attack_type=parsed.attack_type,
+            risk_score=risk_score,
+            risk_level=risk_level,
+            source_ip=event.source_ip,
+            target=target,
+            confidence=parsed.confidence,
+            evidence=parsed.evidence,
+            mitre_attack=mitre,
+            recommendations=recommendations,
+            report_markdown=report_markdown,
+        )
+
+    def _score(self, parsed: ParsedSecurityEvent) -> int:
+        """
+        根据攻击类型和日志上下文计算风险分数。
+
+        Parameters:
+         parsed - LogParserAgent 输出的解析后安全事件
+
+        Returns:
+         0 到 100 之间的整数风险分数
+
+        Raises:
+         None
+        """
+
+        score = self.BASE_SCORES.get(parsed.attack_type, 25)
+
+        if parsed.event.status == 403:
+            score += 4
+
+        if parsed.event.waf_rule_id:
+            score += 6
+
+        if "Automated Scanner" in parsed.attack_features:
+            score += 8
+
+        return min(score, 100)
+
+    def _level(self, score: int) -> str:
+        """
+        根据风险分数转换风险等级。
+
+        Parameters:
+         score - 0 到 100 之间的整数风险分数
+
+        Returns:
+         标准化风险等级，取值为 low、medium、high 或 critical
+
+        Raises:
+         None
+        """
+
+        if score >= 90:
+            return "critical"
+        if score >= 70:
+            return "high"
+        if score >= 40:
+            return "medium"
+        return "low"
+
+    def _map_mitre(self, attack_type: str) -> list[MitreTechnique]:
+        """
+        根据攻击类型映射 MITRE ATT&CK 技术。
+
+        Parameters:
+         attack_type - 识别出的攻击类型
+
+        Returns:
+         与攻击类型相关的 MITRE ATT&CK 技术列表；如果没有映射则返回空列表
+
+        Raises:
+         None
+        """
+
+        technique = self.MITRE_MAPPING.get(attack_type)
+
+        if technique is None:
+            return []
+
+        return [technique]
+
+    def _recommendations(
+        self,
+        attack_type: str,
+        source_ip: str,
+        target: str,
+    ) -> list[str]:
+        """
+        根据攻击类型生成安全处置建议。
+
+        Parameters:
+         attack_type - 识别出的攻击类型
+         source_ip - 请求来源 IP
+         target - 被攻击目标路径或 URL
+
+        Returns:
+         面向安全运营人员的处置建议列表
+
+        Raises:
+         None
+        """
+
+        common = [
+            f"回溯源 IP {source_ip} 在过去 24 小时内的访问行为。",
+            "保留原始日志和 WAF 命中证据，便于后续复盘。",
+        ]
+
+        by_attack = {
+            "SQL Injection": [
+                f"检查 {target} 是否使用参数化查询或 ORM 安全绑定。",
+                "临时提高 SQL 注入相关 WAF 规则的拦截级别。",
+            ],
+            "XSS": [
+                f"检查 {target} 的输入过滤和输出编码策略。",
+                "确认响应中是否存在未转义的用户输入。",
+            ],
+            "Path Traversal": [
+                f"检查 {target} 是否存在任意文件读取风险。",
+                "限制文件下载接口的目录边界和文件白名单。",
+            ],
+            "Command Injection": [
+                f"检查 {target} 是否将用户输入拼接到系统命令中。",
+                "禁用不必要的命令执行入口并增加参数白名单。",
+            ],
+        }
+
+        return by_attack.get(
+            attack_type,
+            ["继续观察并结合更多上下文判断是否为攻击。"],
+        ) + common
+
+    def _build_report(
+        self,
+        parsed: ParsedSecurityEvent,
+        risk_score: int,
+        risk_level: str,
+        recommendations: list[str],
+    ) -> str:
+        """
+        生成 Markdown 格式的安全事件分析报告。
+
+        Parameters:
+         parsed - LogParserAgent 输出的解析后安全事件
+         risk_score - 0 到 100 之间的整数风险分数
+         risk_level - 标准化风险等级
+         recommendations - 安全处置建议列表
+
+        Returns:
+         Markdown 格式的安全事件分析报告
+
+        Raises:
+         None
+        """
+
+        evidence = "\n".join(f"- {item}" for item in parsed.evidence) or "- 暂无明确证据"
+        recs = "\n".join(
+            f"{idx}. {item}"
+            for idx, item in enumerate(recommendations, start=1)
+        )
+
+        return (
+            "## 安全事件分析报告\n\n"
+            f"**结论**：检测到疑似 {parsed.attack_type}，"
+            f"风险等级：{risk_level}，风险分数：{risk_score}。\n\n"
+            "**关键证据**\n\n"
+            f"{evidence}\n\n"
+            "**处置建议**\n\n"
+            f"{recs}\n"
+        )
