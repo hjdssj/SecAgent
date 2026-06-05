@@ -11,7 +11,7 @@ class LogParserAgent:
      None
 
     Returns:
-     一个用于执行日志攻击特征解析的 Agent 实例
+     一个用于从安全事件中提取攻击特征的 Agent 实例
 
     Raises:
      None
@@ -57,13 +57,13 @@ class LogParserAgent:
 
     def parse(self, event: SecurityEvent) -> ParsedSecurityEvent:
         """
-        将标准化安全事件解析为包含攻击特征的中间结果。
+        将标准化安全事件解析为攻击分析特征。
 
         Parameters:
-         event - 标准化安全事件对象，包含 URL、请求参数、User-Agent、WAF 规则和原始日志
+         event - 标准化安全事件，包含 URL、请求参数、User-Agent、WAF 规则和原始日志
 
         Returns:
-         解析后的安全事件对象，包含攻击类型、攻击特征、证据列表和置信度
+         解析后的安全事件，包含攻击类型、攻击特征、证据和置信度
 
         Raises:
          None
@@ -105,13 +105,13 @@ class LogParserAgent:
 
     def _build_detection_text(self, event: SecurityEvent) -> str:
         """
-        构建用于攻击特征检测的文本内容。
+        构建用于攻击特征检测的文本。
 
         Parameters:
-         event - 标准化安全事件对象
+         event - 标准化安全事件
 
         Returns:
-         合并 URL、路径、请求参数、User-Agent、WAF 信息和原始日志后的检测文本
+         由 URL、路径、请求参数、User-Agent、WAF 信息和原始日志合并得到的检测文本
 
         Raises:
          None
@@ -135,10 +135,10 @@ class LogParserAgent:
         text: str,
     ) -> list[tuple[str, str]]:
         """
-        根据正则规则匹配攻击特征。
+        使用正则表达式匹配攻击特征。
 
         Parameters:
-         attack_type - 当前规则对应的攻击类型
+         attack_type - 当前规则组对应的攻击类型
          patterns - 用于检测该攻击类型的正则表达式列表
          text - 待检测的日志文本
 
@@ -167,7 +167,7 @@ class LogParserAgent:
 
         Parameters:
          detections - 已命中的攻击类型和证据说明列表
-         event - 标准化安全事件对象
+         event - 标准化安全事件
 
         Returns:
          最终攻击类型；如果无法判断则返回 Unknown

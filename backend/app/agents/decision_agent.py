@@ -12,7 +12,7 @@ class DecisionAgent:
      None
 
     Returns:
-     一个用于执行风险评分、ATT&CK 映射和处置建议生成的决策 Agent 实例
+     一个用于风险评分、ATT&CK 映射和处置建议生成的决策 Agent 实例
 
     Raises:
      None
