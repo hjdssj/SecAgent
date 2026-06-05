@@ -2,6 +2,7 @@
 __pycache__/
 *.py[cod]
 *.pyo
+backend/test_parser.py
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
@@ -21,6 +22,7 @@ ENV/
 
 # Logs and runtime files
 *.log
+!data/sample_logs/*.log
 logs/
 reports/*.tmp
 

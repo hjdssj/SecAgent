@@ -1,0 +1,1 @@
+client_ip=45.67.89.10 method=GET url="/login?id=1' OR '1'='1" status=403 user_agent="sqlmap/1.7" rule_id=942100 message="SQL Injection Attack Detected"

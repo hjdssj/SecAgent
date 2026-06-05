@@ -1,0 +1,1 @@
+client_ip=8.8.8.8 method=GET url="/search?q=<script>alert(1)</script>" status=403 user_agent="Mozilla/5.0" rule_id=941100 message="XSS Attack Detected"

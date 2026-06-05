@@ -1,0 +1,1 @@
+client_ip=9.9.9.9 method=GET url="/download?file=../../etc/passwd" status=403 user_agent="Mozilla/5.0" rule_id=930120 message="Path Traversal Attack Detected"
