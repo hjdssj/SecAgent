@@ -124,7 +124,6 @@ class LogParserAgent:
                 event.query,
                 event.user_agent,
                 event.waf_message or "",
-                event.raw_log,
             ]
         )
 
@@ -186,8 +185,6 @@ class LogParserAgent:
             return "Path Traversal"
         if rule_id.startswith("941"):
             return "XSS"
-        if rule_id.startswith("913"):
-            return "Automated Scanner"
 
         message = (event.waf_message or "").lower()
 
@@ -212,6 +209,9 @@ class LogParserAgent:
         for attack_type in priority:
             if attack_type in found:
                 return attack_type
+
+        if rule_id.startswith("913"):
+            return "Automated Scanner"
 
         return "Unknown"
 

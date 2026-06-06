@@ -4,3 +4,23 @@ services:
     container_name: secrag-redis
     ports:
       - "6379:6379"
+  
+  waf:
+    build:
+      context: .
+      dockerfile: infra/waf/Dockerfile
+    container_name: secrag-waf
+    ports:
+      - "8080:80"
+    environment:
+      MODSEC_RULE_ENGINE: "on"
+      MODSEC_AUDIT_ENGINE: "RelevantOnly"
+      MODSEC_AUDIT_LOG_FORMAT: "JSON"
+      MODSEC_AUDIT_LOG_TYPE: "Serial"
+      MODSEC_AUDIT_LOG: "/var/log/modsecurity/audit/audit.log"
+      MODSEC_AUDIT_STORAGE_DIR: "/var/log/modsecurity/audit"
+    volumes:
+      - ./data/waf_logs/nginx:/var/log/nginx
+      - ./data/waf_logs/modsecurity:/var/log/modsecurity
+    depends_on:
+      - redis
