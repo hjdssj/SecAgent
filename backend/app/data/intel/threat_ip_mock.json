@@ -1,0 +1,30 @@
+{
+  "45.67.89.10": {
+    "reputation": "malicious",
+    "risk_score": 92,
+    "tags": ["scanner", "sqlmap", "botnet"],
+    "source": "local_mock",
+    "description": "Known scanner source used in demo SQL injection traffic."
+  },
+  "8.8.8.8": {
+    "reputation": "unknown",
+    "risk_score": 20,
+    "tags": ["public_dns"],
+    "source": "local_mock",
+    "description": "Public DNS address used as low-risk demo traffic."
+  },
+  "9.9.9.9": {
+    "reputation": "suspicious",
+    "risk_score": 62,
+    "tags": ["scanner", "path-traversal-probe"],
+    "source": "local_mock",
+    "description": "Suspicious source observed in path traversal demo traffic."
+  },
+  "172.23.0.1": {
+    "reputation": "demo_internal",
+    "risk_score": 45,
+    "tags": ["docker-host", "waf-demo-source"],
+    "source": "local_mock",
+    "description": "Docker bridge source used by local WAF integration tests."
+  }
+}
