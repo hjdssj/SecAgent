@@ -2,6 +2,7 @@ from app.agents.decision_agent import DecisionAgent
 from app.agents.log_parser_agent import LogParserAgent
 from app.models.alert import SecurityAlert
 from app.models.event import SecurityEvent
+from app.rag.rag_agent import RAGAgent
 
 
 class SecurityAnalysisOrchestrator:
@@ -34,6 +35,7 @@ class SecurityAnalysisOrchestrator:
 
         self.log_parser = LogParserAgent()
         self.decision_agent = DecisionAgent()
+        self.rag_agent = RAGAgent()
 
     def analyze(self, event: SecurityEvent) -> SecurityAlert:
         """
@@ -50,4 +52,5 @@ class SecurityAnalysisOrchestrator:
         """
 
         parsed = self.log_parser.parse(event)
-        return self.decision_agent.decide(parsed)
+        alert = self.decision_agent.decide(parsed)
+        return self.rag_agent.enrich_alert(alert, parsed)
