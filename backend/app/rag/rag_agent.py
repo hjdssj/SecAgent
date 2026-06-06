@@ -1,11 +1,11 @@
 import re
-from collections import Counter
 
 from app.models.alert import SecurityAlert
 from app.models.event import ParsedSecurityEvent
+from app.rag.hybrid_retriever import HybridRetriever
 from app.rag.knowledge_loader import KnowledgeLoader
 from app.rag.query_rewriter import SecurityQueryRewriter
-from app.rag.schemas import KnowledgeChunk, KnowledgeReference, RAGAnalysisResult
+from app.rag.schemas import KnowledgeChunk, KnowledgeReference, RAGAnalysisResult, RetrievalResult
 
 
 class RAGAgent:
@@ -17,7 +17,7 @@ class RAGAgent:
      query_rewriter - rewriter used to build retrieval queries from parsed events
 
     Returns:
-     A lightweight RAG agent for local security knowledge retrieval
+     A RAG agent that uses query rewrite and hybrid retrieval for security knowledge
 
     Raises:
      None
@@ -45,8 +45,9 @@ class RAGAgent:
         self.knowledge_loader = knowledge_loader or KnowledgeLoader()
         self.query_rewriter = query_rewriter or SecurityQueryRewriter()
         self._chunks: list[KnowledgeChunk] | None = None
+        self._retriever: HybridRetriever | None = None
 
-    def analyze(self, parsed: ParsedSecurityEvent, top_k: int = 3) -> RAGAnalysisResult:
+    def analyze(self, parsed: ParsedSecurityEvent, top_k: int = 4) -> RAGAnalysisResult:
         """
         Retrieve relevant security knowledge for a parsed event.
 
@@ -55,32 +56,25 @@ class RAGAgent:
          top_k - maximum number of references returned from local knowledge
 
         Returns:
-         RAG analysis result containing summary, references, and recommendations
+         RAG analysis result containing summary, references, citations, and recommendations
 
         Raises:
          None
         """
 
         query = self.query_rewriter.rewrite(parsed)
-        query_terms = self._terms(query)
-        ranked = self._rank(query_terms, parsed.attack_type)
-        selected_chunks = [
-            chunk
-            for chunk, score in ranked[:top_k]
-            if score > 0
-        ]
-        references = [
-            self._to_reference(chunk, score)
-            for chunk, score in ranked[:top_k]
-            if score > 0
-        ]
+        results = self._retriever_or_build().search(query, top_k=top_k)
+        references = [self._to_reference(result) for result in results]
+        chunks = [result.chunk for result in results]
+        citations = [self._citation(reference) for reference in references]
 
         return RAGAnalysisResult(
             query=query,
             summary=self._summary(parsed, references),
             references=references,
-            recommended_actions=self._recommended_actions(selected_chunks, references),
-            matched_knowledge=[item.title for item in references],
+            recommended_actions=self._recommended_actions(chunks, references),
+            matched_knowledge=[reference.title for reference in references],
+            citations=citations,
         )
 
     def enrich_alert(
@@ -110,7 +104,10 @@ class RAGAgent:
         evidence = [
             *alert.evidence,
             *[
-                f"知识库引用：{ref.title}（{ref.source}）"
+                (
+                    f"RAG 引用：{ref.title}（{ref.source}，"
+                    f"score={ref.score:.2f}，{ref.reason}）"
+                )
                 for ref in result.references
             ],
         ]
@@ -150,90 +147,31 @@ class RAGAgent:
 
         return self._chunks
 
-    def _rank(
-        self,
-        query_terms: list[str],
-        attack_type: str,
-    ) -> list[tuple[KnowledgeChunk, float]]:
+    def _retriever_or_build(self) -> HybridRetriever:
         """
-        Rank knowledge chunks by lightweight term overlap score.
+        Return cached hybrid retriever, building it when needed.
 
         Parameters:
-         query_terms - normalized retrieval query terms
-         attack_type - attack type used to boost directly related knowledge
+         None
 
         Returns:
-         Ranked list of knowledge chunks with scores
+         Hybrid retriever backed by loaded knowledge chunks
 
         Raises:
          None
         """
 
-        query_counter = Counter(query_terms)
-        ranked: list[tuple[KnowledgeChunk, float]] = []
+        if self._retriever is None:
+            self._retriever = HybridRetriever(self._chunks_or_load())
 
-        for chunk in self._chunks_or_load():
-            chunk_counter = Counter(chunk.keywords)
-            score = 0.0
+        return self._retriever
 
-            for term, weight in query_counter.items():
-                if term in chunk_counter:
-                    score += weight * (1 + min(chunk_counter[term], 3))
-
-            if query_terms and chunk.title.lower() in " ".join(query_terms):
-                score += 5
-
-            score += self._attack_boost(chunk, attack_type)
-            ranked.append((chunk, score))
-
-        return sorted(ranked, key=lambda item: item[1], reverse=True)
-
-    def _attack_boost(
-        self,
-        chunk: KnowledgeChunk,
-        attack_type: str,
-    ) -> float:
+    def _to_reference(self, result: RetrievalResult) -> KnowledgeReference:
         """
-        Boost knowledge chunks that directly match the current attack type.
+        Convert a retrieval result into a report reference.
 
         Parameters:
-         chunk - knowledge chunk being ranked
-         attack_type - attack type detected from the event
-
-        Returns:
-         Additional ranking score for directly related knowledge
-
-        Raises:
-         None
-        """
-
-        aliases = {
-            "SQL Injection": ["sql injection", "942", "t1190", "sql 注入"],
-            "XSS": ["xss", "941", "t1189", "cross site scripting"],
-            "Path Traversal": ["path traversal", "930", "t1190", "路径穿越"],
-            "Command Injection": ["command injection", "932", "t1059", "命令注入"],
-            "Automated Scanner": ["automated scanner", "scanner detection", "913", "sqlmap"],
-        }
-        haystack = f"{chunk.title}\n{chunk.content}".lower()
-        boost = 0.0
-
-        for alias in aliases.get(attack_type, []):
-            if alias.lower() in haystack:
-                boost += 8
-
-        return boost
-
-    def _to_reference(
-        self,
-        chunk: KnowledgeChunk,
-        score: float,
-    ) -> KnowledgeReference:
-        """
-        Convert a knowledge chunk into a report reference.
-
-        Parameters:
-         chunk - matched knowledge chunk
-         score - retrieval score assigned to the chunk
+         result - scored retrieval result returned by HybridRetriever
 
         Returns:
          Structured knowledge reference
@@ -242,12 +180,15 @@ class RAGAgent:
          None
         """
 
-        snippet = self._snippet(chunk.content)
+        chunk = result.chunk
         return KnowledgeReference(
             source=chunk.source,
             title=chunk.title,
-            snippet=snippet,
-            score=score,
+            category=chunk.category,
+            snippet=self._snippet(chunk.content),
+            score=result.score,
+            retrieval_type=result.retrieval_type,
+            reason=result.reason,
         )
 
     def _summary(
@@ -270,10 +211,13 @@ class RAGAgent:
         """
 
         if not references:
-            return "未在本地知识库中检索到稳定匹配的安全知识。"
+            return "未在本地安全知识库中检索到稳定匹配的安全知识。"
 
-        titles = "、".join(ref.title for ref in references[:2])
-        return f"本地知识库检索到与 {parsed.attack_type} 相关的知识条目：{titles}。"
+        titles = "、".join(reference.title for reference in references[:2])
+        return (
+            f"基于改写后的查询，知识库检索到与 {parsed.attack_type} 相关的条目："
+            f"{titles}。"
+        )
 
     def _recommended_actions(
         self,
@@ -309,56 +253,21 @@ class RAGAgent:
                 if stripped.startswith("### ") and in_remediation:
                     in_remediation = False
 
-                if not in_remediation:
+                if not in_remediation or not stripped.startswith("- "):
                     continue
 
-                if not stripped.startswith("- "):
-                    continue
+                action = stripped.removeprefix("- ").strip()
 
-                line = stripped.removeprefix("- ").strip()
-
-                if line:
-                    actions.append(line)
+                if action:
+                    actions.append(action)
 
         if not actions:
-            for reference in references:
-                actions.append(f"参考知识库条目《{reference.title}》完善检测、加固和复盘动作。")
+            actions.extend(
+                f"参考知识库条目《{reference.title}》完善检测、加固和复盘动作。"
+                for reference in references[:2]
+            )
 
         return self._merge_unique([], actions[:5])
-
-    def _legacy_recommended_actions(
-        self,
-        references: list[KnowledgeReference],
-    ) -> list[str]:
-        """
-        Build fallback remediation actions from reference snippets.
-
-        Parameters:
-         references - matched knowledge references
-
-        Returns:
-         Deduplicated fallback remediation action list
-
-        Raises:
-         None
-        """
-
-        actions: list[str] = []
-
-        for reference in references:
-            for line in reference.snippet.splitlines():
-                line = line.strip(" -")
-
-                if line.startswith("修复") or line.startswith("使用") or line.startswith("限制"):
-                    actions.append(line)
-
-        if actions:
-            return self._merge_unique([], actions)
-
-        return [
-            f"参考知识库条目《{reference.title}》完善检测、加固和复盘动作。"
-            for reference in references[:2]
-        ]
 
     def _append_report_section(
         self,
@@ -380,7 +289,10 @@ class RAGAgent:
         """
 
         refs = "\n".join(
-            f"- **{ref.title}**（{ref.source}）：{ref.snippet}"
+            (
+                f"- **{ref.title}**（{ref.source}，{ref.category}，"
+                f"score={ref.score:.2f}）：{ref.snippet}"
+            )
             for ref in result.references
         )
         actions = "\n".join(
@@ -391,12 +303,29 @@ class RAGAgent:
         return (
             f"{report_markdown.rstrip()}\n\n"
             "## RAG 知识库增强\n\n"
+            f"**改写查询**：`{result.query}`\n\n"
             f"{result.summary}\n\n"
             "**知识库引用**\n\n"
             f"{refs}\n\n"
             "**知识库补充建议**\n\n"
             f"{actions}\n"
         )
+
+    def _citation(self, reference: KnowledgeReference) -> str:
+        """
+        Build a compact citation string from one knowledge reference.
+
+        Parameters:
+         reference - matched knowledge reference
+
+        Returns:
+         Compact citation text
+
+        Raises:
+         None
+        """
+
+        return f"{reference.title} ({reference.source}, score={reference.score:.2f})"
 
     def _snippet(self, content: str, max_length: int = 180) -> str:
         """
@@ -415,22 +344,6 @@ class RAGAgent:
 
         text = re.sub(r"\s+", " ", content).strip()
         return text[:max_length]
-
-    def _terms(self, text: str) -> list[str]:
-        """
-        Extract normalized retrieval terms from query text.
-
-        Parameters:
-         text - query text
-
-        Returns:
-         List of lowercase query terms
-
-        Raises:
-         None
-        """
-
-        return re.findall(r"[a-z0-9_./'-]+", text.lower())
 
     def _merge_unique(self, base: list[str], extra: list[str]) -> list[str]:
         """

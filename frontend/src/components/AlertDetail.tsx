@@ -1,4 +1,15 @@
-import { Brain, Crosshair, FileText, ListChecks, Network, Server } from "lucide-react";
+import {
+  Brain,
+  Crosshair,
+  FileText,
+  Gauge,
+  ListChecks,
+  Network,
+  Server,
+  ShieldCheck,
+  Timer,
+  UserCheck,
+} from "lucide-react";
 import type { SecurityAlert } from "../types/alert";
 import { RiskBadge } from "./RiskBadge";
 import { ReportPanel } from "./ReportPanel";
@@ -36,7 +47,104 @@ export function AlertDetail({ alert }: AlertDetailProps) {
           label="Confidence"
           value={`${Math.round(alert.confidence * 100)}%`}
         />
+        <Metric icon={<Gauge size={17} />} label="Mode" value={alert.analysis_mode ?? "fast"} />
+        <Metric
+          icon={<Timer size={17} />}
+          label="Latency"
+          value={`${alert.analysis_metadata?.latency_ms ?? 0}ms`}
+        />
+        <Metric icon={<ShieldCheck size={17} />} label="Status" value={alert.status ?? "auto_triaged"} />
+        <Metric
+          icon={<UserCheck size={17} />}
+          label="Review"
+          value={alert.requires_human_review ? "Required" : "Not required"}
+        />
       </div>
+
+      <section className="analysis-panel">
+        <div className="panel-heading">
+          <h2>
+            <span aria-hidden="true">
+              <Gauge size={17} />
+            </span>
+            Analysis
+          </h2>
+          <span>{alert.analysis_mode ?? "fast"}</span>
+        </div>
+        <div className="analysis-grid">
+          <AnalysisGroup title="Enabled" items={alert.analysis_metadata?.enabled_modules ?? []} />
+          <AnalysisGroup title="Skipped" items={alert.analysis_metadata?.skipped_modules ?? []} />
+        </div>
+      </section>
+
+      <section className="score-panel">
+        <div className="panel-heading">
+          <h2>
+            <span aria-hidden="true">
+              <Brain size={17} />
+            </span>
+            Score Breakdown
+          </h2>
+          <span>{alert.score_breakdown?.total_score ?? alert.risk_score}</span>
+        </div>
+        <ul className="score-list">
+          {alert.score_breakdown?.items?.length ? (
+            alert.score_breakdown.items.map((item, index) => (
+              <li key={`${item.name}-${index}`}>
+                <div>
+                  <strong>{item.name}</strong>
+                  <span>{item.reason}</span>
+                </div>
+                <span className="score-delta">{item.score >= 0 ? `+${item.score}` : item.score}</span>
+              </li>
+            ))
+          ) : (
+            <li>
+              <div>
+                <strong>Base score</strong>
+                <span>No detailed score breakdown</span>
+              </div>
+              <span className="score-delta">+{alert.risk_score}</span>
+            </li>
+          )}
+        </ul>
+      </section>
+
+      <section className="triage-panel">
+        <div className="panel-heading">
+          <h2>
+            <span aria-hidden="true">
+              <ShieldCheck size={17} />
+            </span>
+            Auto Triage
+          </h2>
+          <span>{alert.automation_decision ?? "observe_only"}</span>
+        </div>
+        <div className="triage-grid">
+          <TriageItem label="Status" value={alert.status ?? "auto_triaged"} />
+          <TriageItem label="Decision" value={alert.automation_decision ?? "observe_only"} />
+          <TriageItem label="Owner" value={alert.business_owner ?? "Unknown"} />
+          <TriageItem label="Asset" value={alert.asset_name ?? "Unknown"} />
+          <TriageItem label="Criticality" value={alert.asset_criticality ?? "Unknown"} />
+          <TriageItem label="Human Review" value={alert.requires_human_review ? "Required" : "Not required"} />
+        </div>
+        <div className="triage-reason">
+          <span className="metric__label">Reason</span>
+          <p>{alert.triage_reason || "No auto triage reason"}</p>
+        </div>
+        <div className="context-ref-list">
+          <span className="metric__label">Context References</span>
+          {alert.context_references.length > 0 ? (
+            <ul>
+              {alert.context_references.map((item, index) => (
+                <li key={`context-${index}`}>{item}</li>
+              ))}
+            </ul>
+          ) : (
+            <p className="muted">No context references</p>
+          )}
+        </div>
+      </section>
 
       <div className="detail-columns">
         <InfoBlock title="Evidence" icon={<FileText size={17} />} items={alert.evidence} />
@@ -68,6 +176,44 @@ export function AlertDetail({ alert }: AlertDetailProps) {
 
       <ReportPanel markdown={alert.report_markdown} />
     </section>
+  );
+}
+
+interface TriageItemProps {
+  label: string;
+  value: string;
+}
+
+function TriageItem({ label, value }: TriageItemProps) {
+  return (
+    <div className="triage-item">
+      <span className="metric__label">{label}</span>
+      <strong>{value}</strong>
+    </div>
+  );
+}
+
+interface AnalysisGroupProps {
+  title: string;
+  items: string[];
+}
+
+function AnalysisGroup({ title, items }: AnalysisGroupProps) {
+  return (
+    <div className="analysis-group">
+      <span className="metric__label">{title}</span>
+      <div className="chip-row chip-row--compact">
+        {items.length > 0 ? (
+          items.map((item) => (
+            <span className="chip" key={`${title}-${item}`}>
+              {item}
+            </span>
+          ))
+        ) : (
+          <span className="muted">None</span>
+        )}
+      </div>
+    </div>
   );
 }
 

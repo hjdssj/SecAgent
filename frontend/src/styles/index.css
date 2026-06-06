@@ -185,6 +185,9 @@ button {
 .detail-layout,
 .detail-empty,
 .info-block,
+.analysis-panel,
+.score-panel,
+.triage-panel,
 .mitre-panel,
 .report-panel {
   border: 1px solid #d8e0e7;
@@ -353,7 +356,7 @@ td:nth-child(6) {
 
 .detail-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
 }
 
@@ -376,11 +379,79 @@ td:nth-child(6) {
   line-height: 1.5;
 }
 
+.analysis-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  padding: 12px 14px;
+}
+
+.analysis-group {
+  min-width: 0;
+}
+
+.triage-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  padding: 12px 14px 0;
+}
+
+.triage-item {
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid #e3e9ee;
+  border-radius: 8px;
+  background: #f8fafb;
+}
+
+.triage-item strong {
+  display: block;
+  overflow-wrap: anywhere;
+  color: #17212c;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.triage-reason,
+.context-ref-list {
+  padding: 12px 14px;
+}
+
+.triage-reason {
+  border-bottom: 1px solid #e8edf2;
+}
+
+.triage-reason p,
+.context-ref-list p {
+  margin: 6px 0 0;
+  color: #1f2d3a;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.context-ref-list ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+
+.context-ref-list li {
+  margin-bottom: 6px;
+  color: #1f2d3a;
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
 .chip-row {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   padding: 12px 14px;
+}
+
+.chip-row--compact {
+  padding: 6px 0 0;
 }
 
 .chip {
@@ -394,6 +465,48 @@ td:nth-child(6) {
   color: #19313a;
   background: #f3fbfc;
   font-size: 12px;
+}
+
+.score-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 12px 14px 14px;
+  list-style: none;
+}
+
+.score-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid #e3e9ee;
+  border-radius: 8px;
+  background: #f8fafb;
+}
+
+.score-list strong,
+.score-list span {
+  display: block;
+}
+
+.score-list strong {
+  color: #17212c;
+  font-size: 13px;
+}
+
+.score-list span {
+  color: #687789;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.score-delta {
+  min-width: 42px;
+  color: #174c57 !important;
+  font-weight: 800;
+  text-align: right;
 }
 
 .report-panel {
@@ -478,7 +591,9 @@ td:nth-child(6) {
 
   .statbar,
   .detail-grid,
-  .detail-columns {
+  .detail-columns,
+  .analysis-grid,
+  .triage-grid {
     grid-template-columns: 1fr;
   }
 

@@ -7,7 +7,8 @@ SecRAG Agent is a SOC-oriented security analysis and response demo system. It co
 - WAF integration with Nginx + ModSecurity + OWASP CRS.
 - Redis Stream event pipeline for `security:events` and `security:alerts`.
 - Attack detection for SQL Injection, XSS, Path Traversal, Command Injection, and scanners.
-- Local RAG knowledge base with ATT&CK, OWASP CRS, remediation, and CVE-style references.
+- RAG retrieval with structured documents, Query Rewrite, BM25, hybrid retrieval hooks, citations, and scores.
+- Enterprise context RAG and AutoTriage for business owner, asset criticality, and review routing.
 - Local threat intelligence and Redis-backed source IP memory.
 - FastAPI backend and React SOC dashboard.
 
@@ -23,6 +24,9 @@ Attack traffic
   -> LogParserAgent
   -> DecisionAgent
   -> RAGAgent
+  -> Query Rewrite + HybridRetriever
+  -> ContextAgent
+  -> AutoTriagePolicy
   -> ThreatIntelAgent
   -> EventMemory
   -> Redis Stream: security:alerts
@@ -36,7 +40,7 @@ Attack traffic
 Backend: FastAPI, Pydantic, Redis
 Collector: Python, ModSecurity JSON audit log parser
 WAF: Nginx, ModSecurity, OWASP CRS
-RAG MVP: local Markdown knowledge base with lightweight retrieval
+RAG: structured Markdown knowledge base, Query Rewrite, BM25, HybridRetriever, citation output
 Frontend: React, TypeScript, Vite, lucide-react, react-markdown
 Infrastructure: Docker Compose
 ```
@@ -125,16 +129,19 @@ GET  /api/alerts/recent?count=20
 
 ```text
 backend/app/
+  analysis/     # cost-control modes, score breakdown, analysis metadata
   agents/       # log parser, decision, orchestration
   api/          # FastAPI routes
   collector/    # sample and WAF log parsers
+  context/      # enterprise context retrieval for auto triage
   data/         # local knowledge and threat intelligence
   intel/        # threat intelligence agent
   memory/       # Redis-backed event memory
   models/       # Pydantic event and alert models
-  rag/          # local RAG retrieval
+  rag/          # structured RAG retrieval, BM25, hybrid retrieval, query rewrite
   services/     # Redis event consumer
   storage/      # Redis helpers
+  triage/       # auto triage policy and workflow status schemas
 
 frontend/
   src/          # React SOC console
@@ -167,4 +174,7 @@ The project has completed the MVP stages:
 6. Threat intelligence and event memory
 7. React SOC dashboard
 8. Documentation, tests, and demo packaging
+9. Real RAG upgrade with BM25, HybridRetriever, Query Rewrite, citations, and retrieval tests
+10. Cost-controlled analysis modes with risk score breakdown and frontend explanation
+11. Enterprise context RAG and AutoTriage for business-aware alert routing
 ```

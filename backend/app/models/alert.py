@@ -2,6 +2,9 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
+from app.analysis.schemas import AnalysisMetadata, AnalysisMode, RiskScoreBreakdown
+from app.triage.schemas import AlertStatus, AutomationDecision
+
 RiskLevel = Literal["low", "medium", "high", "critical"]
 
 
@@ -41,6 +44,17 @@ class SecurityAlert(BaseModel):
      mitre_attack - 与该告警相关的 MITRE ATT&CK 技术映射列表
      recommendations - 面向安全运营人员的处置建议列表
      report_markdown - 可选的 Markdown 格式安全事件分析报告
+     analysis_mode - 成本控制分析模式，取值为 fast、enriched 或 deep
+     score_breakdown - 可解释风险评分拆解
+     analysis_metadata - 本次分析启用模块、跳过模块和耗时等元数据
+     status - alert workflow status assigned by auto triage or analyst action
+     automation_decision - automation action recommended by auto triage
+     triage_reason - reason for the auto triage decision
+     requires_human_review - whether an analyst must review the alert
+     business_owner - business owner inferred from enterprise context
+     asset_name - target asset name inferred from enterprise context
+     asset_criticality - target asset criticality inferred from enterprise context
+     context_references - enterprise context references used by triage
 
     Returns:
      一个可用于 API 响应和前端展示的结构化安全告警对象
@@ -61,3 +75,17 @@ class SecurityAlert(BaseModel):
     mitre_attack: list[MitreTechnique] = Field(default_factory=list)
     recommendations: list[str] = Field(default_factory=list)
     report_markdown: Optional[str] = None
+    analysis_mode: AnalysisMode = "fast"
+    score_breakdown: Optional[RiskScoreBreakdown] = None
+    analysis_metadata: Optional[AnalysisMetadata] = None
+    status: AlertStatus = "auto_triaged"
+    automation_decision: AutomationDecision = "observe_only"
+    triage_reason: str = ""
+    requires_human_review: bool = False
+    business_owner: Optional[str] = None
+    asset_name: Optional[str] = None
+    asset_criticality: Optional[str] = None
+    context_references: list[str] = Field(default_factory=list)
+    analyst_note: Optional[str] = None
+    handled_by: Optional[str] = None
+    handled_at: Optional[str] = None

@@ -37,12 +37,45 @@ SecurityEvent
   -> LogParserAgent
   -> ParsedSecurityEvent
   -> DecisionAgent
+  -> AnalysisPolicy
+  -> fast / enriched / deep
   -> RAGAgent
+  -> Query Rewrite
+  -> HybridRetriever
+  -> BM25Retriever
+  -> VectorRetriever interface
   -> ThreatIntelAgent
   -> EventMemory
+  -> ContextAgent
+  -> AutoTriagePolicy
   -> Context judgment
   -> SecurityAlert
 ```
+
+## Cost-Control Analysis Modes
+
+```text
+fast
+  -> LogParserAgent
+  -> DecisionAgent
+  -> skip RAG, ThreatIntel, and Memory
+
+enriched
+  -> LogParserAgent
+  -> DecisionAgent
+  -> RAGAgent
+  -> EventMemory
+  -> skip ThreatIntel
+
+deep
+  -> LogParserAgent
+  -> DecisionAgent
+  -> RAGAgent
+  -> ThreatIntelAgent
+  -> EventMemory
+```
+
+Each alert includes `analysis_mode`, `score_breakdown`, and `analysis_metadata`. This keeps the SOC workflow cost-aware: low-risk events use the fast path, medium-risk events receive local RAG and memory context, and high-risk events trigger the full enrichment path.
 
 ## Redis Streams
 
@@ -72,7 +105,33 @@ backend/app/data/knowledge_base/
   cve_examples.md
 ```
 
-The current RAG layer is a lightweight local retriever. It is intentionally small and stable for demo usage, and can later be replaced with LlamaIndex + Milvus.
+The RAG layer loads local Markdown documents as structured `KnowledgeDocument` and `KnowledgeChunk` objects. `SecurityQueryRewriter` expands parsed attack context with WAF rule IDs, attack features, MITRE terms, and remediation terms. `HybridRetriever` currently uses BM25 retrieval and keeps a replaceable vector retrieval interface for future BGE + Milvus integration. Alerts include knowledge citations, retrieval scores, and match reasons.
+
+## Enterprise Context
+
+```text
+backend/app/data/context/
+  asset_inventory.md
+  service_owners.md
+  scanner_whitelist.md
+  waf_policy.md
+  incident_playbook.md
+  change_calendar.md
+```
+
+`ContextAgent` retrieves enterprise context for source IP, target path, WAF rule, and attack type. It extracts business owner, asset name, asset criticality, scanner whitelist matches, WAF action, and change-window context.
+
+`AutoTriagePolicy` then assigns workflow fields:
+
+```text
+status
+automation_decision
+triage_reason
+requires_human_review
+context_references
+```
+
+This allows low-risk internal scanner alerts to be auto-triaged while high-risk alerts against critical assets are routed to human review.
 
 ## Threat Intelligence
 

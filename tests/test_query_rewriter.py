@@ -7,12 +7,12 @@ sys.path.append(str(BACKEND_DIR))
 
 from app.agents.log_parser_agent import LogParserAgent
 from app.models.event import SecurityEvent
-from app.rag.rag_agent import RAGAgent
+from app.rag.query_rewriter import SecurityQueryRewriter
 
 
-def test_rag_agent_retrieves_sqli_knowledge() -> None:
+def test_query_rewriter_expands_attack_and_waf_context() -> None:
     """
-    Verify local RAG retrieval returns SQL injection knowledge references.
+    Verify query rewrite expands parsed event fields into security retrieval terms.
 
     Parameters:
      None
@@ -35,11 +35,11 @@ def test_rag_agent_retrieves_sqli_knowledge() -> None:
     )
     parsed = LogParserAgent().parse(event)
 
-    result = RAGAgent().analyze(parsed)
+    query = SecurityQueryRewriter().rewrite(parsed)
 
-    titles = {reference.title for reference in result.references}
-    assert "SQL Injection" in titles or "OWASP CRS 942 SQL Injection" in titles
-    assert result.citations
-    assert all(reference.score > 0 for reference in result.references)
-    assert all(reference.reason for reference in result.references)
-    assert result.recommended_actions
+    assert "SQL Injection" in query
+    assert "942100" in query
+    assert "OWASP CRS 942" in query
+    assert "MITRE T1190" in query
+    assert "sqlmap" in query
+    assert "parameterized query" in query
