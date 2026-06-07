@@ -1,9 +1,46 @@
 import argparse
+import json
+import os
+from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote
 from urllib.request import Request, urlopen
 
-BASE_URL = "http://127.0.0.1:8080"
+ROOT_DIR = Path(__file__).resolve().parents[1]
+
+
+def load_env_file() -> None:
+    """
+    Load project dotenv values for standalone demo scripts.
+
+    Parameters:
+     None
+
+    Returns:
+     None
+
+    Raises:
+     None
+    """
+
+    env_path = ROOT_DIR / ".env"
+
+    if not env_path.exists():
+        return
+
+    for raw_line in env_path.read_text(encoding="utf-8", errors="ignore").splitlines():
+        line = raw_line.strip()
+
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+
+        key, value = line.split("=", 1)
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+
+load_env_file()
+
+BASE_URL = os.getenv("WAF_BASE_URL", "http://127.0.0.1:8080")
 
 ATTACKS = {
     "normal": {
@@ -21,6 +58,16 @@ ATTACKS = {
     "path_traversal": {
         "path": "/download?file=../../etc/passwd",
         "user_agent": "Mozilla/5.0",
+    },
+    "order_json": {
+        "path": "/api/order",
+        "user_agent": "Mozilla/5.0",
+        "method": "POST",
+        "json": {
+            "sku": "demo",
+            "quantity": 1,
+            "comment": "<script>alert(1)</script>",
+        },
     },
 }
 
@@ -41,7 +88,19 @@ def send_request(name: str) -> None:
 
     item = ATTACKS[name]
     url = BASE_URL + item["path"]
-    request = Request(url, headers={"User-Agent": item["user_agent"]})
+    data = None
+    headers = {"User-Agent": item["user_agent"]}
+
+    if "json" in item:
+        data = json.dumps(item["json"]).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+
+    request = Request(
+        url,
+        data=data,
+        headers=headers,
+        method=item.get("method", "GET"),
+    )
 
     try:
         with urlopen(request, timeout=5) as response:

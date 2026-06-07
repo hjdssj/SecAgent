@@ -8,7 +8,9 @@ sys.path.append(str(BACKEND_DIR))
 
 from app.storage.redis_client import ALERT_STREAM, DEADLETTER_STREAM, EVENT_STREAM, get_redis_client
 
-MEMORY_PATTERN = "memory:ip:*"
+from app.core.config import get_env
+
+MEMORY_PATTERN = f"{get_env('REDIS_MEMORY_PREFIX', 'memory:ip')}:*"
 
 
 def clear_redis() -> int:

@@ -1,26 +1,35 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
 
 from app.agents.orchestrator import SecurityAnalysisOrchestrator
+from app.db.dependencies import get_db_session
 from app.models.alert import SecurityAlert
 from app.models.event import SecurityEvent
+from app.repositories.alert_repository import AlertRepository
 
 router = APIRouter(prefix="/api", tags=["analyze"])
 orchestrator = SecurityAnalysisOrchestrator()
 
 
 @router.post("/analyze", response_model=SecurityAlert)
-def analyze_event(event: SecurityEvent) -> SecurityAlert:
+def analyze_event(
+    event: SecurityEvent,
+    session: Session = Depends(get_db_session),
+) -> SecurityAlert:
     """
-    分析单条标准化安全事件并返回安全告警。
+    Analyze one normalized security event and persist the generated alert.
 
     Parameters:
-     event - 标准化安全事件请求体，由前端、日志回放脚本或 WAF 日志采集器提交
+     event - normalized security event submitted by API, replay script, or collector
+     session - database session
 
     Returns:
-     结构化安全告警，包含攻击类型、风险等级、证据和处置建议
+     Structured security alert generated from the event
 
     Raises:
      None
     """
 
-    return orchestrator.analyze(event)
+    alert = orchestrator.analyze(event)
+    AlertRepository(session).save(alert)
+    return alert

@@ -79,3 +79,28 @@ docker exec secrag-redis redis-cli XLEN security:alerts
 http://127.0.0.1:8000/docs
 GET /api/alerts/recent
 ```
+
+## Option C: Single-Server Compose Demo
+
+Use this when you want to run the deployable profile. This starts the bundled `business-demo` service, so no external business server is required.
+
+```powershell
+docker compose -f docker-compose.prod.yml up -d --build
+python scripts\deploy_check.py --skip-audit-log
+python scripts\simulate_attack.py all
+python scripts\deploy_check.py
+```
+
+Open:
+
+```text
+http://127.0.0.1:5173
+```
+
+Notes:
+
+```text
+Default traffic path: http://127.0.0.1:8080 -> WAF -> business-demo:3000.
+Set WAF_PROXY_PASS before protecting a real service.
+Start with MODSEC_RULE_ENGINE=DetectionOnly for real business traffic.
+```

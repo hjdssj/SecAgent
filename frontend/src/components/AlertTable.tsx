@@ -21,6 +21,7 @@ export function AlertTable({ alerts, selectedAlertId, onSelect }: AlertTableProp
             <tr>
               <th>Risk</th>
               <th>Attack</th>
+              <th>Status</th>
               <th>Source</th>
               <th>Target</th>
               <th>Confidence</th>
@@ -40,6 +41,10 @@ export function AlertTable({ alerts, selectedAlertId, onSelect }: AlertTableProp
                 <td>
                   <strong>{alert.attack_type}</strong>
                   <span className="muted mono">{alert.alert_id}</span>
+                </td>
+                <td>
+                  <span className="status-pill">{alert.status}</span>
+                  {alert.requires_human_review ? <span className="muted">review</span> : null}
                 </td>
                 <td className="mono">{alert.source_ip}</td>
                 <td className="target-cell">{alert.target}</td>
@@ -61,7 +66,7 @@ export function AlertTable({ alerts, selectedAlertId, onSelect }: AlertTableProp
             ))}
             {alerts.length === 0 ? (
               <tr>
-                <td className="empty-row" colSpan={6}>
+                <td className="empty-row" colSpan={7}>
                   No alerts
                 </td>
               </tr>

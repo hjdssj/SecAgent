@@ -3,7 +3,15 @@ services:
     image: redis:7
     container_name: secrag-redis
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-6379}:6379"
+
+  business-demo:
+    build:
+      context: .
+      dockerfile: infra/business-demo/Dockerfile
+    container_name: secrag-business-demo
+    ports:
+      - "${BUSINESS_DEMO_PORT:-3000}:3000"
   
   waf:
     build:
@@ -11,16 +19,24 @@ services:
       dockerfile: infra/waf/Dockerfile
     container_name: secrag-waf
     ports:
-      - "8080:80"
+      - "${WAF_PORT:-8080}:80"
     environment:
-      MODSEC_RULE_ENGINE: "on"
-      MODSEC_AUDIT_ENGINE: "RelevantOnly"
-      MODSEC_AUDIT_LOG_FORMAT: "JSON"
-      MODSEC_AUDIT_LOG_TYPE: "Serial"
-      MODSEC_AUDIT_LOG: "/var/log/modsecurity/audit/audit.log"
-      MODSEC_AUDIT_STORAGE_DIR: "/var/log/modsecurity/audit"
+      DOLLAR: "$$"
+      WAF_SERVER_NAME: "${WAF_SERVER_NAME:-_}"
+      WAF_PROXY_PASS: "${WAF_PROXY_PASS:-http://business-demo:3000}"
+      WAF_CLIENT_MAX_BODY_SIZE: "${WAF_CLIENT_MAX_BODY_SIZE:-10m}"
+      WAF_PROXY_CONNECT_TIMEOUT: "${WAF_PROXY_CONNECT_TIMEOUT:-10s}"
+      WAF_PROXY_SEND_TIMEOUT: "${WAF_PROXY_SEND_TIMEOUT:-30s}"
+      WAF_PROXY_READ_TIMEOUT: "${WAF_PROXY_READ_TIMEOUT:-30s}"
+      MODSEC_RULE_ENGINE: "${MODSEC_RULE_ENGINE:-on}"
+      MODSEC_AUDIT_ENGINE: "${MODSEC_AUDIT_ENGINE:-RelevantOnly}"
+      MODSEC_AUDIT_LOG_FORMAT: "${MODSEC_AUDIT_LOG_FORMAT:-JSON}"
+      MODSEC_AUDIT_LOG_TYPE: "${MODSEC_AUDIT_LOG_TYPE:-Serial}"
+      MODSEC_AUDIT_LOG: "${MODSEC_AUDIT_LOG:-/var/log/modsecurity/audit/audit.log}"
+      MODSEC_AUDIT_STORAGE_DIR: "${MODSEC_AUDIT_STORAGE_DIR:-/var/log/modsecurity/audit}"
     volumes:
-      - ./data/waf_logs/nginx:/var/log/nginx
-      - ./data/waf_logs/modsecurity:/var/log/modsecurity
+      - ${WAF_NGINX_LOG_DIR:-./data/waf_logs/nginx}:/var/log/nginx
+      - ${WAF_MODSEC_LOG_DIR:-./data/waf_logs/modsecurity}:/var/log/modsecurity
     depends_on:
       - redis
+      - business-demo

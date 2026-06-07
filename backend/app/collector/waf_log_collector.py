@@ -7,14 +7,14 @@ from typing import Any, Optional
 from urllib.parse import unquote, urlsplit
 
 from app.collector.modsecurity_parser import ModSecurityParser
+from app.core.config import PROJECT_ROOT, get_path_env
 from app.models.event import SecurityEvent
 from app.storage.redis_client import publish_event
 
-ROOT_DIR = Path(__file__).resolve().parents[3]
 DEFAULT_AUDIT_LOG_PATH = (
-    ROOT_DIR / "data" / "waf_logs" / "modsecurity" / "audit" / "audit.log"
+    PROJECT_ROOT / "data" / "waf_logs" / "modsecurity" / "audit" / "audit.log"
 )
-DEFAULT_OFFSET_PATH = ROOT_DIR / "data" / "waf_logs" / ".collector.offset"
+DEFAULT_OFFSET_PATH = PROJECT_ROOT / "data" / "waf_logs" / ".collector.offset"
 
 
 class WafLogCollector:
@@ -34,8 +34,8 @@ class WafLogCollector:
 
     def __init__(
         self,
-        log_path: Path = DEFAULT_AUDIT_LOG_PATH,
-        offset_path: Path = DEFAULT_OFFSET_PATH,
+        log_path: Path | None = None,
+        offset_path: Path | None = None,
     ) -> None:
         """
         Initialize the WAF log collector.
@@ -51,8 +51,8 @@ class WafLogCollector:
          None
         """
 
-        self.log_path = log_path
-        self.offset_path = offset_path
+        self.log_path = log_path or get_path_env("WAF_AUDIT_LOG_PATH", DEFAULT_AUDIT_LOG_PATH)
+        self.offset_path = offset_path or get_path_env("WAF_COLLECTOR_OFFSET_PATH", DEFAULT_OFFSET_PATH)
         self.parser = ModSecurityParser()
 
     def collect_once(self, from_start: bool = False) -> int:
@@ -453,7 +453,7 @@ def main() -> None:
     """
 
     cli = argparse.ArgumentParser(description="Collect WAF logs into Redis.")
-    cli.add_argument("--log-path", type=Path, default=DEFAULT_AUDIT_LOG_PATH)
+    cli.add_argument("--log-path", type=Path, default=None)
     cli.add_argument("--from-start", action="store_true")
     cli.add_argument("--follow", action="store_true")
     cli.add_argument("--interval", type=float, default=2.0)

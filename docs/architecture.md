@@ -18,6 +18,7 @@ Attack traffic
 
 ```text
 Nginx + ModSecurity + OWASP CRS
+  -> reverse proxy to WAF_PROXY_PASS
   -> data/waf_logs/modsecurity/audit/audit.log
   -> backend/app/collector/waf_log_collector.py
   -> SecurityEvent
@@ -26,9 +27,38 @@ Nginx + ModSecurity + OWASP CRS
   -> SecurityAnalysisOrchestrator
   -> SecurityAlert
   -> Redis Stream: security:alerts
+  -> DB: alerts
   -> GET /api/alerts/recent
   -> frontend SOC console
 ```
+
+## Single-Server Deployment
+
+The deployment profile is defined in `docker-compose.prod.yml` and includes:
+
+```text
+redis
+waf
+backend
+frontend
+collector
+consumer
+```
+
+The WAF container uses `infra/waf/default.conf` as an environment-rendered Nginx template. `WAF_PROXY_PASS` points to the protected business service, and `/__waf_health` remains available as a lightweight health check.
+
+```text
+User traffic
+  -> WAF
+  -> WAF_PROXY_PASS
+  -> WAF audit log
+  -> collector --follow
+  -> Redis security:events
+  -> consumer --follow
+  -> DB alerts table
+```
+
+Deployment details are documented in `docs/deployment.md`.
 
 ## Agent Pipeline
 
@@ -92,6 +122,42 @@ memory:ip:{source_ip}
 memory:ip:{source_ip}:attack_types
 memory:ip:{source_ip}:targets
 memory:ip:{source_ip}:alerts
+```
+
+Redis is responsible for real-time transport, short-term memory, and cache-style data. Alert lifecycle state is persisted in the relational database.
+
+## Alert Persistence
+
+```text
+backend/app/db/
+  session.py
+  models.py
+  init_db.py
+
+backend/app/repositories/
+  alert_repository.py
+```
+
+The default local database is SQLite at `data/secagent.db`. The backend also supports `DATABASE_URL`, so the same repository layer can later point to MySQL or PostgreSQL.
+
+The `alerts` table stores:
+
+```text
+alert core fields
+RAG and analysis metadata
+AutoTriage result
+workflow status
+analyst note
+handled_by
+handled_at
+created_at / updated_at
+```
+
+The current lifecycle API is intentionally small:
+
+```text
+GET /api/alerts/recent
+PATCH /api/alerts/{alert_id}/status
 ```
 
 ## Knowledge Sources

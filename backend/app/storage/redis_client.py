@@ -1,11 +1,12 @@
 from redis import Redis
 
+from app.core.config import get_env, get_int_env
 from app.models.alert import SecurityAlert
 from app.models.event import SecurityEvent
 
-EVENT_STREAM = "security:events"
-ALERT_STREAM = "security:alerts"
-DEADLETTER_STREAM = "security:deadletter"
+EVENT_STREAM = get_env("REDIS_EVENT_STREAM", "security:events")
+ALERT_STREAM = get_env("REDIS_ALERT_STREAM", "security:alerts")
+DEADLETTER_STREAM = get_env("REDIS_DEADLETTER_STREAM", "security:deadletter")
 
 
 def get_redis_client() -> Redis:
@@ -23,9 +24,10 @@ def get_redis_client() -> Redis:
     """
 
     return Redis(
-        host="localhost",
-        port=6379,
-        db=0,
+        host=get_env("REDIS_HOST", "localhost"),
+        port=get_int_env("REDIS_PORT", 6379),
+        db=get_int_env("REDIS_DB", 0),
+        password=get_env("REDIS_PASSWORD") or None,
         decode_responses=True,
     )
 
@@ -76,6 +78,24 @@ def publish_alert(alert: SecurityAlert) -> str:
         },
     )
     return message_id
+
+
+def publish_deadletter(payload: dict[str, str]) -> str:
+    """
+    Publish a failed event payload to the deadletter stream.
+
+    Parameters:
+     payload - string fields describing the failed event and error
+
+    Returns:
+     Redis Stream message ID
+
+    Raises:
+     None
+    """
+
+    client = get_redis_client()
+    return client.xadd(DEADLETTER_STREAM, payload)
 
 
 def read_recent_alerts(count: int = 20) -> list[SecurityAlert]:

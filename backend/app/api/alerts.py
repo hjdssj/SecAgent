@@ -1,24 +1,71 @@
-from fastapi import APIRouter, Query
+from typing import Optional
 
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.orm import Session
+
+from app.db.dependencies import get_db_session
 from app.models.alert import SecurityAlert
-from app.storage.redis_client import read_recent_alerts
+from app.models.alert_update import AlertStatusUpdate
+from app.repositories.alert_repository import AlertRepository
+from app.triage.schemas import AlertStatus
 
 router = APIRouter(prefix="/api/alerts", tags=["alerts"])
 
 
 @router.get("/recent", response_model=list[SecurityAlert])
-def get_recent_alerts(count: int = Query(default=20, ge=1, le=100)) -> list[SecurityAlert]:
+def get_recent_alerts(
+    count: int = Query(default=20, ge=1, le=100),
+    status: Optional[AlertStatus] = Query(default=None),
+    requires_human_review: Optional[bool] = Query(default=None),
+    session: Session = Depends(get_db_session),
+) -> list[SecurityAlert]:
     """
-    查询最近生成的安全告警。
+    Query recent persisted security alerts with optional workflow filters.
 
     Parameters:
-     count - 返回的最大告警数量
+     count - maximum number of alerts to return
+     status - optional workflow status filter
+     requires_human_review - optional human review filter
+     session - database session
 
     Returns:
-     最近生成的安全告警列表
+     Recent security alerts ordered from newest to oldest
 
     Raises:
      None
     """
 
-    return read_recent_alerts(count=count)
+    return AlertRepository(session).list_recent(
+        count=count,
+        status=status,
+        requires_human_review=requires_human_review,
+    )
+
+
+@router.patch("/{alert_id}/status", response_model=SecurityAlert)
+def update_alert_status(
+    alert_id: str,
+    update: AlertStatusUpdate,
+    session: Session = Depends(get_db_session),
+) -> SecurityAlert:
+    """
+    Update alert workflow status and analyst fields.
+
+    Parameters:
+     alert_id - alert identifier to update
+     update - status update request body
+     session - database session
+
+    Returns:
+     Updated security alert
+
+    Raises:
+     HTTPException - returned when the alert does not exist
+    """
+
+    alert = AlertRepository(session).update_status(alert_id, update)
+
+    if alert is None:
+        raise HTTPException(status_code=404, detail="Alert not found")
+
+    return alert

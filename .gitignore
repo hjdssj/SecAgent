@@ -23,6 +23,7 @@ ENV/
 # Logs and runtime files
 *.log
 !data/sample_logs/*.log
+data/*.db
 data/waf_logs/.collector.offset
 logs/
 reports/*.tmp

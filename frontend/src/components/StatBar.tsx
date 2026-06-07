@@ -9,6 +9,7 @@ interface StatBarProps {
 export function StatBar({ alerts, lastUpdated }: StatBarProps) {
   const critical = alerts.filter((alert) => alert.risk_level === "critical").length;
   const high = alerts.filter((alert) => alert.risk_level === "high").length;
+  const review = alerts.filter((alert) => alert.requires_human_review).length;
   const sources = new Set(alerts.map((alert) => alert.source_ip)).size;
 
   return (
@@ -36,6 +37,13 @@ export function StatBar({ alerts, lastUpdated }: StatBarProps) {
       </div>
       <div className="stat">
         <ShieldCheck size={18} aria-hidden="true" />
+        <div>
+          <span className="stat__label">Review</span>
+          <strong>{review}</strong>
+        </div>
+      </div>
+      <div className="stat">
+        <Radar size={18} aria-hidden="true" />
         <div>
           <span className="stat__label">Sources</span>
           <strong>{sources}</strong>

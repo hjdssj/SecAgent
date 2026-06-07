@@ -131,7 +131,7 @@ button {
 
 .statbar {
   display: grid;
-  grid-template-columns: repeat(5, minmax(120px, 1fr));
+  grid-template-columns: repeat(6, minmax(120px, 1fr));
   gap: 10px;
   margin: 12px 0;
 }
@@ -146,6 +146,61 @@ button {
   border: 1px solid #d8e0e7;
   border-radius: 8px;
   background: #ffffff;
+}
+
+select,
+input,
+textarea {
+  width: 100%;
+  border: 1px solid #cbd5de;
+  border-radius: 8px;
+  color: #17212c;
+  background: #ffffff;
+  font: inherit;
+}
+
+select,
+input {
+  min-height: 36px;
+  padding: 0 10px;
+}
+
+textarea {
+  min-height: 74px;
+  padding: 9px 10px;
+  resize: vertical;
+}
+
+.filterbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 12px;
+  padding: 12px 14px;
+  border: 1px solid #d8e0e7;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.filterbar label {
+  display: grid;
+  gap: 5px;
+  min-width: 190px;
+  color: #687789;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.checkbox-control {
+  display: inline-flex !important;
+  min-width: 0 !important;
+  align-items: center;
+  grid-template-columns: auto 1fr;
+}
+
+.checkbox-control input {
+  width: 16px;
+  min-height: 16px;
 }
 
 .stat svg,
@@ -274,16 +329,21 @@ td:nth-child(1) {
 
 th:nth-child(3),
 td:nth-child(3) {
-  width: 122px;
+  width: 128px;
 }
 
-th:nth-child(5),
-td:nth-child(5) {
-  width: 96px;
+th:nth-child(4),
+td:nth-child(4) {
+  width: 122px;
 }
 
 th:nth-child(6),
 td:nth-child(6) {
+  width: 96px;
+}
+
+th:nth-child(7),
+td:nth-child(7) {
   width: 42px;
 }
 
@@ -338,6 +398,21 @@ td:nth-child(6) {
 .risk-badge--low {
   color: #114b33;
   background: #bde8cf;
+}
+
+.status-pill {
+  display: inline-flex;
+  max-width: 100%;
+  min-height: 24px;
+  align-items: center;
+  padding: 3px 8px;
+  border: 1px solid #cbdfe3;
+  border-radius: 999px;
+  color: #19313a;
+  background: #f3fbfc;
+  font-size: 11px;
+  font-weight: 800;
+  overflow-wrap: anywhere;
 }
 
 .detail-layout {
@@ -414,12 +489,45 @@ td:nth-child(6) {
 }
 
 .triage-reason,
-.context-ref-list {
+.context-ref-list,
+.status-form {
   padding: 12px 14px;
 }
 
-.triage-reason {
+.triage-reason,
+.status-form {
   border-bottom: 1px solid #e8edf2;
+}
+
+.status-form {
+  display: grid;
+  grid-template-columns: minmax(130px, 0.8fr) minmax(130px, 0.8fr) minmax(220px, 1.4fr) auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.status-form label {
+  display: grid;
+  gap: 5px;
+}
+
+.primary-button {
+  display: inline-flex;
+  min-width: 92px;
+  min-height: 36px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid #174c57;
+  border-radius: 8px;
+  color: #ffffff;
+  background: #174c57;
+  cursor: pointer;
+}
+
+.primary-button:disabled {
+  cursor: wait;
+  opacity: 0.68;
 }
 
 .triage-reason p,
@@ -590,10 +698,12 @@ td:nth-child(6) {
   }
 
   .statbar,
+  .filterbar,
   .detail-grid,
   .detail-columns,
   .analysis-grid,
-  .triage-grid {
+  .triage-grid,
+  .status-form {
     grid-template-columns: 1fr;
   }
 

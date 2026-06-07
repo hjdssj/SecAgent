@@ -1,10 +1,11 @@
 from redis.exceptions import RedisError
 
+from app.core.config import get_env
 from app.memory.schemas import IpMemorySummary
 from app.models.alert import SecurityAlert
 from app.storage.redis_client import get_redis_client
 
-MEMORY_PREFIX = "memory:ip"
+MEMORY_PREFIX = get_env("REDIS_MEMORY_PREFIX", "memory:ip")
 
 
 class EventMemory:

@@ -5,20 +5,45 @@ import {
   Gauge,
   ListChecks,
   Network,
+  Save,
   Server,
   ShieldCheck,
   Timer,
   UserCheck,
 } from "lucide-react";
-import type { SecurityAlert } from "../types/alert";
+import { useEffect, useState } from "react";
+import type { AlertStatus, SecurityAlert } from "../types/alert";
 import { RiskBadge } from "./RiskBadge";
 import { ReportPanel } from "./ReportPanel";
 
 interface AlertDetailProps {
   alert: SecurityAlert | null;
+  isUpdating: boolean;
+  onStatusUpdate: (
+    alertId: string,
+    update: { status: AlertStatus; analyst_note?: string; handled_by?: string },
+  ) => Promise<void>;
 }
 
-export function AlertDetail({ alert }: AlertDetailProps) {
+const STATUS_OPTIONS: Array<{ label: string; value: AlertStatus }> = [
+  { label: "Auto Triaged", value: "auto_triaged" },
+  { label: "Needs Review", value: "needs_review" },
+  { label: "Investigating", value: "investigating" },
+  { label: "Resolved", value: "resolved" },
+  { label: "False Positive", value: "false_positive" },
+];
+
+export function AlertDetail({ alert, isUpdating, onStatusUpdate }: AlertDetailProps) {
+  const [status, setStatus] = useState<AlertStatus>("auto_triaged");
+  const [analystNote, setAnalystNote] = useState("");
+  const [handledBy, setHandledBy] = useState("analyst");
+
+  useEffect(() => {
+    setStatus(alert?.status ?? "auto_triaged");
+    setAnalystNote(alert?.analyst_note ?? "");
+    setHandledBy(alert?.handled_by ?? "analyst");
+  }, [alert]);
+
   if (!alert) {
     return (
       <section className="detail-empty">
@@ -132,6 +157,44 @@ export function AlertDetail({ alert }: AlertDetailProps) {
           <span className="metric__label">Reason</span>
           <p>{alert.triage_reason || "No auto triage reason"}</p>
         </div>
+        <form
+          className="status-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void onStatusUpdate(alert.alert_id, {
+              status,
+              analyst_note: analystNote.trim() || undefined,
+              handled_by: handledBy.trim() || "analyst",
+            });
+          }}
+        >
+          <label>
+            <span className="metric__label">Update Status</span>
+            <select value={status} onChange={(event) => setStatus(event.target.value as AlertStatus)}>
+              {STATUS_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span className="metric__label">Handled By</span>
+            <input value={handledBy} onChange={(event) => setHandledBy(event.target.value)} />
+          </label>
+          <label className="status-form__note">
+            <span className="metric__label">Analyst Note</span>
+            <textarea
+              value={analystNote}
+              onChange={(event) => setAnalystNote(event.target.value)}
+              rows={3}
+            />
+          </label>
+          <button className="primary-button" type="submit" disabled={isUpdating}>
+            <Save size={16} aria-hidden="true" />
+            {isUpdating ? "Saving" : "Save"}
+          </button>
+        </form>
         <div className="context-ref-list">
           <span className="metric__label">Context References</span>
           {alert.context_references.length > 0 ? (

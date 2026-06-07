@@ -15,7 +15,7 @@ Response:
 
 ## POST /api/analyze
 
-Analyze one normalized security event.
+Analyze one normalized security event and persist the generated alert.
 
 Request example:
 
@@ -58,22 +58,54 @@ report_markdown
 
 ## GET /api/alerts/recent
 
-Read recent alerts from Redis.
+Read recent persisted alerts from the database.
 
 Query:
 
 ```text
 count - number of alerts, default 20, min 1, max 100
+status - optional workflow status filter
+requires_human_review - optional human review filter
 ```
 
 Example:
 
 ```text
 GET /api/alerts/recent?count=20
+GET /api/alerts/recent?status=needs_review
+GET /api/alerts/recent?requires_human_review=true
+GET /api/alerts/recent?status=needs_review&requires_human_review=true
 ```
 
 Response:
 
 ```text
 list[SecurityAlert]
+```
+
+## PATCH /api/alerts/{alert_id}/status
+
+Update alert workflow status and analyst handling fields.
+
+Request example:
+
+```json
+{
+  "status": "resolved",
+  "analyst_note": "WAF blocked the request and the service owner confirmed no impact.",
+  "handled_by": "analyst"
+}
+```
+
+Response:
+
+```text
+SecurityAlert
+```
+
+Errors:
+
+```text
+404 - alert_id does not exist
+422 - invalid status or request body
 ```

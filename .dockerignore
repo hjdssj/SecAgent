@@ -1,0 +1,12 @@
+.git
+.idea
+.vscode
+.pytest_cache
+__pycache__
+*.py[cod]
+.env
+data/*.db
+data/waf_logs/.collector.offset
+frontend/node_modules
+frontend/dist
+reports/*.tmp

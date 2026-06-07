@@ -1,17 +1,31 @@
 import { RefreshCw, Shield } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { fetchRecentAlerts } from "./api/alerts";
+import { fetchRecentAlerts, updateAlertStatus } from "./api/alerts";
 import { AlertDetail } from "./components/AlertDetail";
 import { AlertTable } from "./components/AlertTable";
 import { StatBar } from "./components/StatBar";
-import type { SecurityAlert } from "./types/alert";
+import type { AlertStatus, SecurityAlert } from "./types/alert";
+
+type StatusFilter = AlertStatus | "all";
+
+const STATUS_OPTIONS: Array<{ label: string; value: StatusFilter }> = [
+  { label: "All", value: "all" },
+  { label: "Auto Triaged", value: "auto_triaged" },
+  { label: "Needs Review", value: "needs_review" },
+  { label: "Investigating", value: "investigating" },
+  { label: "Resolved", value: "resolved" },
+  { label: "False Positive", value: "false_positive" },
+];
 
 export default function App() {
   const [alerts, setAlerts] = useState<SecurityAlert[]>([]);
   const [selectedAlertId, setSelectedAlertId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [reviewOnly, setReviewOnly] = useState(false);
 
   const selectedAlert = useMemo(
     () => alerts.find((alert) => alert.alert_id === selectedAlertId) ?? alerts[0] ?? null,
@@ -21,7 +35,11 @@ export default function App() {
   const loadAlerts = useCallback(async () => {
     setIsLoading(true);
     try {
-      const nextAlerts = await fetchRecentAlerts(50);
+      const nextAlerts = await fetchRecentAlerts({
+        count: 50,
+        status: statusFilter === "all" ? undefined : statusFilter,
+        requiresHumanReview: reviewOnly ? true : undefined,
+      });
       setAlerts(nextAlerts);
       setError(null);
       setLastUpdated(new Date());
@@ -37,7 +55,27 @@ export default function App() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [reviewOnly, statusFilter]);
+
+  const handleStatusUpdate = useCallback(
+    async (alertId: string, update: { status: AlertStatus; analyst_note?: string; handled_by?: string }) => {
+      setIsUpdating(true);
+      try {
+        const updatedAlert = await updateAlertStatus(alertId, update);
+        setAlerts((current) =>
+          current.map((alert) => (alert.alert_id === updatedAlert.alert_id ? updatedAlert : alert)),
+        );
+        setError(null);
+        setLastUpdated(new Date());
+        await loadAlerts();
+      } catch (caught) {
+        setError(caught instanceof Error ? caught.message : "Failed to update alert status");
+      } finally {
+        setIsUpdating(false);
+      }
+    },
+    [loadAlerts],
+  );
 
   useEffect(() => {
     void loadAlerts();
@@ -74,13 +112,37 @@ export default function App() {
 
       <StatBar alerts={alerts} lastUpdated={lastUpdated} />
 
+      <section className="filterbar" aria-label="alert filters">
+        <label>
+          <span>Status</span>
+          <select
+            value={statusFilter}
+            onChange={(event) => setStatusFilter(event.target.value as StatusFilter)}
+          >
+            {STATUS_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="checkbox-control">
+          <input
+            type="checkbox"
+            checked={reviewOnly}
+            onChange={(event) => setReviewOnly(event.target.checked)}
+          />
+          <span>Needs human review</span>
+        </label>
+      </section>
+
       <div className="workspace">
         <AlertTable
           alerts={alerts}
           selectedAlertId={selectedAlert?.alert_id ?? null}
           onSelect={(alert) => setSelectedAlertId(alert.alert_id)}
         />
-        <AlertDetail alert={selectedAlert} />
+        <AlertDetail alert={selectedAlert} isUpdating={isUpdating} onStatusUpdate={handleStatusUpdate} />
       </div>
     </main>
   );

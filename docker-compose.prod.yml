@@ -1,0 +1,131 @@
+services:
+  redis:
+    image: redis:7
+    container_name: secagent-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: secagent-backend
+    restart: unless-stopped
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: "${REDIS_PASSWORD:-}"
+      REDIS_DB: "${REDIS_DB:-0}"
+      REDIS_EVENT_STREAM: "${REDIS_EVENT_STREAM:-security:events}"
+      REDIS_ALERT_STREAM: "${REDIS_ALERT_STREAM:-security:alerts}"
+      REDIS_DEADLETTER_STREAM: "${REDIS_DEADLETTER_STREAM:-security:deadletter}"
+      REDIS_MEMORY_PREFIX: "${REDIS_MEMORY_PREFIX:-memory:ip}"
+      SECAGENT_DB_PATH: /app/data/secagent.db
+      BACKEND_CORS_ORIGINS: "${BACKEND_CORS_ORIGINS:-http://127.0.0.1:5173,http://localhost:5173}"
+    volumes:
+      - ./data:/app/data
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    depends_on:
+      - redis
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      args:
+        VITE_API_BASE_URL: "${VITE_API_BASE_URL:-http://127.0.0.1:8000}"
+    container_name: secagent-frontend
+    restart: unless-stopped
+    ports:
+      - "${FRONTEND_PORT:-5173}:80"
+    depends_on:
+      - backend
+
+  business-demo:
+    build:
+      context: .
+      dockerfile: infra/business-demo/Dockerfile
+    container_name: secagent-business-demo
+    restart: unless-stopped
+    ports:
+      - "${BUSINESS_DEMO_PORT:-3000}:3000"
+
+  waf:
+    build:
+      context: .
+      dockerfile: infra/waf/Dockerfile
+    container_name: secagent-waf
+    restart: unless-stopped
+    ports:
+      - "${WAF_PORT:-8080}:80"
+    environment:
+      DOLLAR: "$$"
+      WAF_SERVER_NAME: "${WAF_SERVER_NAME:-_}"
+      WAF_PROXY_PASS: "${WAF_PROXY_PASS:-http://business-demo:3000}"
+      WAF_CLIENT_MAX_BODY_SIZE: "${WAF_CLIENT_MAX_BODY_SIZE:-10m}"
+      WAF_PROXY_CONNECT_TIMEOUT: "${WAF_PROXY_CONNECT_TIMEOUT:-10s}"
+      WAF_PROXY_SEND_TIMEOUT: "${WAF_PROXY_SEND_TIMEOUT:-30s}"
+      WAF_PROXY_READ_TIMEOUT: "${WAF_PROXY_READ_TIMEOUT:-30s}"
+      MODSEC_RULE_ENGINE: "${MODSEC_RULE_ENGINE:-DetectionOnly}"
+      MODSEC_AUDIT_ENGINE: "${MODSEC_AUDIT_ENGINE:-RelevantOnly}"
+      MODSEC_AUDIT_LOG_FORMAT: "${MODSEC_AUDIT_LOG_FORMAT:-JSON}"
+      MODSEC_AUDIT_LOG_TYPE: "${MODSEC_AUDIT_LOG_TYPE:-Serial}"
+      MODSEC_AUDIT_LOG: "${MODSEC_AUDIT_LOG:-/var/log/modsecurity/audit/audit.log}"
+      MODSEC_AUDIT_STORAGE_DIR: "${MODSEC_AUDIT_STORAGE_DIR:-/var/log/modsecurity/audit}"
+    volumes:
+      - ${WAF_NGINX_LOG_DIR:-./data/waf_logs/nginx}:/var/log/nginx
+      - ${WAF_MODSEC_LOG_DIR:-./data/waf_logs/modsecurity}:/var/log/modsecurity
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - business-demo
+
+  collector:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: secagent-collector
+    restart: unless-stopped
+    command: ["python", "-m", "app.collector.waf_log_collector", "--follow"]
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: "${REDIS_PASSWORD:-}"
+      REDIS_DB: "${REDIS_DB:-0}"
+      REDIS_EVENT_STREAM: "${REDIS_EVENT_STREAM:-security:events}"
+      WAF_AUDIT_LOG_PATH: /app/data/waf_logs/modsecurity/audit/audit.log
+      WAF_COLLECTOR_OFFSET_PATH: /app/data/waf_logs/.collector.offset
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      - redis
+      - waf
+
+  consumer:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: secagent-consumer
+    restart: unless-stopped
+    command: ["python", "-m", "app.services.event_consumer", "--follow"]
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: "${REDIS_PASSWORD:-}"
+      REDIS_DB: "${REDIS_DB:-0}"
+      REDIS_EVENT_STREAM: "${REDIS_EVENT_STREAM:-security:events}"
+      REDIS_ALERT_STREAM: "${REDIS_ALERT_STREAM:-security:alerts}"
+      REDIS_DEADLETTER_STREAM: "${REDIS_DEADLETTER_STREAM:-security:deadletter}"
+      REDIS_MEMORY_PREFIX: "${REDIS_MEMORY_PREFIX:-memory:ip}"
+      SECAGENT_DB_PATH: /app/data/secagent.db
+      EVENT_CONSUMER_START_ID: "${EVENT_CONSUMER_START_ID:-0-0}"
+      EVENT_CONSUMER_COUNT: "${EVENT_CONSUMER_COUNT:-10}"
+      EVENT_CONSUMER_BLOCK_MS: "${EVENT_CONSUMER_BLOCK_MS:-1000}"
+      EVENT_CONSUMER_INTERVAL: "${EVENT_CONSUMER_INTERVAL:-1.0}"
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      - redis
+      - backend
