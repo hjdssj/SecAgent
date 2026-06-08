@@ -25,6 +25,7 @@ ENV/
 !data/sample_logs/*.log
 data/*.db
 data/waf_logs/.collector.offset
+data/redis/.event_consumer.offset
 logs/
 reports/*.tmp
 

@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.db.dependencies import get_db_session
-from app.models.alert import SecurityAlert
+from app.models.alert import RiskLevel, SecurityAlert
 from app.models.alert_update import AlertStatusUpdate
 from app.repositories.alert_repository import AlertRepository
 from app.triage.schemas import AlertStatus
@@ -16,6 +16,7 @@ router = APIRouter(prefix="/api/alerts", tags=["alerts"])
 def get_recent_alerts(
     count: int = Query(default=20, ge=1, le=100),
     status: Optional[AlertStatus] = Query(default=None),
+    risk_level: Optional[RiskLevel] = Query(default=None),
     requires_human_review: Optional[bool] = Query(default=None),
     session: Session = Depends(get_db_session),
 ) -> list[SecurityAlert]:
@@ -25,6 +26,7 @@ def get_recent_alerts(
     Parameters:
      count - maximum number of alerts to return
      status - optional workflow status filter
+     risk_level - optional risk level filter
      requires_human_review - optional human review filter
      session - database session
 
@@ -38,6 +40,7 @@ def get_recent_alerts(
     return AlertRepository(session).list_recent(
         count=count,
         status=status,
+        risk_level=risk_level,
         requires_human_review=requires_human_review,
     )
 

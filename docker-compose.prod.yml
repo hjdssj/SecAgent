@@ -97,6 +97,7 @@ services:
       REDIS_EVENT_STREAM: "${REDIS_EVENT_STREAM:-security:events}"
       WAF_AUDIT_LOG_PATH: /app/data/waf_logs/modsecurity/audit/audit.log
       WAF_COLLECTOR_OFFSET_PATH: /app/data/waf_logs/.collector.offset
+      WAF_COLLECTOR_IGNORED_PATHS: "${WAF_COLLECTOR_IGNORED_PATHS:-/__waf_health}"
     volumes:
       - ./data:/app/data
     depends_on:
@@ -121,6 +122,8 @@ services:
       REDIS_MEMORY_PREFIX: "${REDIS_MEMORY_PREFIX:-memory:ip}"
       SECAGENT_DB_PATH: /app/data/secagent.db
       EVENT_CONSUMER_START_ID: "${EVENT_CONSUMER_START_ID:-0-0}"
+      EVENT_CONSUMER_OFFSET_PATH: "${EVENT_CONSUMER_OFFSET_PATH:-/app/data/redis/.event_consumer.offset}"
+      EVENT_CONSUMER_IGNORED_PATHS: "${EVENT_CONSUMER_IGNORED_PATHS:-/__waf_health}"
       EVENT_CONSUMER_COUNT: "${EVENT_CONSUMER_COUNT:-10}"
       EVENT_CONSUMER_BLOCK_MS: "${EVENT_CONSUMER_BLOCK_MS:-1000}"
       EVENT_CONSUMER_INTERVAL: "${EVENT_CONSUMER_INTERVAL:-1.0}"

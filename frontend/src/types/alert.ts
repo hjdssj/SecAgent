@@ -45,7 +45,9 @@ export interface AnalysisMetadata {
 
 export interface SecurityAlert {
   alert_id: string;
+  session_id?: string | null;
   event_id: string;
+  event_timestamp?: string | null;
   attack_type: string;
   risk_score: number;
   risk_level: RiskLevel;
@@ -70,4 +72,14 @@ export interface SecurityAlert {
   analyst_note?: string | null;
   handled_by?: string | null;
   handled_at?: string | null;
+  llm_used: boolean;
+  llm_skipped_reason?: string | null;
+  llm_summary?: string | null;
+  llm_model?: string | null;
+  llm_provider?: string | null;
+  llm_latency_ms: number;
+  llm_prompt_tokens?: number | null;
+  llm_completion_tokens?: number | null;
+  llm_total_tokens?: number | null;
+  llm_error?: string | null;
 }

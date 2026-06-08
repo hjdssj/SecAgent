@@ -1,13 +1,13 @@
 import argparse
 import json
 import time
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import unquote, urlsplit
 
 from app.collector.modsecurity_parser import ModSecurityParser
-from app.core.config import PROJECT_ROOT, get_path_env
+from app.core.config import PROJECT_ROOT, get_csv_env, get_path_env
 from app.models.event import SecurityEvent
 from app.storage.redis_client import publish_event
 
@@ -15,6 +15,7 @@ DEFAULT_AUDIT_LOG_PATH = (
     PROJECT_ROOT / "data" / "waf_logs" / "modsecurity" / "audit" / "audit.log"
 )
 DEFAULT_OFFSET_PATH = PROJECT_ROOT / "data" / "waf_logs" / ".collector.offset"
+DEFAULT_IGNORED_PATHS = ["/__waf_health"]
 
 
 class WafLogCollector:
@@ -53,6 +54,9 @@ class WafLogCollector:
 
         self.log_path = log_path or get_path_env("WAF_AUDIT_LOG_PATH", DEFAULT_AUDIT_LOG_PATH)
         self.offset_path = offset_path or get_path_env("WAF_COLLECTOR_OFFSET_PATH", DEFAULT_OFFSET_PATH)
+        self.ignored_paths = set(
+            get_csv_env("WAF_COLLECTOR_IGNORED_PATHS", DEFAULT_IGNORED_PATHS)
+        )
         self.parser = ModSecurityParser()
 
     def collect_once(self, from_start: bool = False) -> int:
@@ -93,6 +97,9 @@ class WafLogCollector:
             event = self._entry_to_event(entry)
 
             if event is None:
+                continue
+
+            if self._should_ignore_event(event):
                 continue
 
             publish_event(event)
@@ -229,6 +236,22 @@ class WafLogCollector:
             raw_log=json.dumps(entry, ensure_ascii=False),
         )
 
+    def _should_ignore_event(self, event: SecurityEvent) -> bool:
+        """
+        Decide whether a normalized event should be ignored by the collector.
+
+        Parameters:
+         event - normalized security event parsed from WAF logs
+
+        Returns:
+         True when the event path is configured as collector noise, otherwise False
+
+        Raises:
+         None
+        """
+
+        return event.path in self.ignored_paths
+
     def _first_message(self, messages: list[Any]) -> dict[str, Optional[str]]:
         """
         Extract the first ModSecurity rule message from an audit log entry.
@@ -321,7 +344,7 @@ class WafLogCollector:
         if not value:
             return None
 
-        text = str(value)
+        text = str(value).strip()
 
         for fmt in (
             "%a %b %d %H:%M:%S %Y",
@@ -329,9 +352,14 @@ class WafLogCollector:
             "%Y-%m-%dT%H:%M:%S%z",
         ):
             try:
-                return datetime.strptime(text, fmt)
+                parsed = datetime.strptime(text, fmt)
             except ValueError:
                 continue
+
+            if parsed.tzinfo is None:
+                return parsed.replace(tzinfo=UTC)
+
+            return parsed.astimezone(UTC)
 
         return None
 

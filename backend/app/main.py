@@ -1,8 +1,10 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.analysis import router as analysis_router
 from app.api.alerts import router as alerts_router
 from app.api.analyze import router as analyze_router
+from app.api.knowledge import router as knowledge_router
 from app.core.config import get_csv_env
 from app.db.init_db import init_db
 
@@ -64,3 +66,5 @@ def health() -> dict[str, str]:
 
 app.include_router(analyze_router)
 app.include_router(alerts_router)
+app.include_router(analysis_router)
+app.include_router(knowledge_router)

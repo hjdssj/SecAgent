@@ -1,7 +1,8 @@
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.analysis.schemas import AnalysisMetadata, RiskScoreBreakdown
@@ -54,14 +55,26 @@ class AlertRepository:
          None
         """
 
-        record = self._get_record(alert.alert_id)
+        record = self._get_record(alert.alert_id) or self._get_record_by_event_id(alert.event_id)
 
         if record is None:
             record = AlertRecord(alert_id=alert.alert_id, event_id=alert.event_id)
             self.session.add(record)
 
         self._apply_alert(record, alert)
-        self.session.commit()
+
+        try:
+            self.session.commit()
+        except IntegrityError:
+            self.session.rollback()
+            record = self._get_record(alert.alert_id) or self._get_record_by_event_id(alert.event_id)
+
+            if record is None:
+                raise
+
+            self._apply_alert(record, alert)
+            self.session.commit()
+
         self.session.refresh(record)
         return self._to_alert(record)
 
@@ -69,6 +82,7 @@ class AlertRepository:
         self,
         count: int = 20,
         status: str | None = None,
+        risk_level: str | None = None,
         requires_human_review: bool | None = None,
     ) -> list[SecurityAlert]:
         """
@@ -77,6 +91,7 @@ class AlertRepository:
         Parameters:
          count - maximum number of alerts to return
          status - optional alert workflow status filter
+         risk_level - optional alert risk level filter
          requires_human_review - optional human review filter
 
         Returns:
@@ -91,14 +106,17 @@ class AlertRepository:
         if status:
             statement = statement.where(AlertRecord.status == status)
 
+        if risk_level:
+            statement = statement.where(AlertRecord.risk_level == risk_level)
+
         if requires_human_review is not None:
             statement = statement.where(
                 AlertRecord.requires_human_review == requires_human_review
             )
 
-        statement = statement.order_by(AlertRecord.updated_at.desc()).limit(count)
+        statement = statement.order_by(AlertRecord.updated_at.desc()).limit(count * 3)
         records = self.session.scalars(statement).all()
-        return [self._to_alert(record) for record in records]
+        return [self._to_alert(record) for record in self._deduplicate_records(records)[:count]]
 
     def get_by_alert_id(self, alert_id: str) -> SecurityAlert | None:
         """
@@ -179,6 +197,53 @@ class AlertRepository:
         statement = select(AlertRecord).where(AlertRecord.alert_id == alert_id)
         return self.session.scalars(statement).first()
 
+    def _deduplicate_records(self, records: list[AlertRecord]) -> list[AlertRecord]:
+        """
+        Keep one alert record per source event ID for list views.
+
+        Parameters:
+         records - alert records ordered from newest to oldest
+
+        Returns:
+         Deduplicated records preserving newest-first order
+
+        Raises:
+         None
+        """
+
+        seen_event_ids: set[str] = set()
+        deduplicated: list[AlertRecord] = []
+
+        for record in records:
+            if record.event_id in seen_event_ids:
+                continue
+
+            seen_event_ids.add(record.event_id)
+            deduplicated.append(record)
+
+        return deduplicated
+
+    def _get_record_by_event_id(self, event_id: str) -> AlertRecord | None:
+        """
+        Return one database record by source event ID.
+
+        Parameters:
+         event_id - source security event identifier
+
+        Returns:
+         Alert record when found, otherwise None
+
+        Raises:
+         None
+        """
+
+        statement = (
+            select(AlertRecord)
+            .where(AlertRecord.event_id == event_id)
+            .order_by(AlertRecord.updated_at.desc())
+        )
+        return self.session.scalars(statement).first()
+
     def _apply_alert(self, record: AlertRecord, alert: SecurityAlert) -> None:
         """
         Copy SecurityAlert fields onto a database record.
@@ -195,6 +260,11 @@ class AlertRepository:
         """
 
         record.event_id = alert.event_id
+        record.session_id = alert.session_id
+
+        if alert.event_timestamp:
+            record.event_timestamp = self._to_utc_naive(alert.event_timestamp)
+
         record.attack_type = alert.attack_type
         record.risk_score = alert.risk_score
         record.risk_level = alert.risk_level
@@ -220,6 +290,16 @@ class AlertRepository:
         record.context_references_json = self._json(alert.context_references)
         record.analyst_note = alert.analyst_note
         record.handled_by = alert.handled_by
+        record.llm_used = alert.llm_used
+        record.llm_skipped_reason = alert.llm_skipped_reason
+        record.llm_summary = alert.llm_summary
+        record.llm_model = alert.llm_model
+        record.llm_provider = alert.llm_provider
+        record.llm_latency_ms = alert.llm_latency_ms
+        record.llm_prompt_tokens = alert.llm_prompt_tokens
+        record.llm_completion_tokens = alert.llm_completion_tokens
+        record.llm_total_tokens = alert.llm_total_tokens
+        record.llm_error = alert.llm_error
 
         if alert.handled_at:
             record.handled_at = datetime.fromisoformat(alert.handled_at)
@@ -255,7 +335,11 @@ class AlertRepository:
 
         return SecurityAlert(
             alert_id=record.alert_id,
+            session_id=record.session_id,
             event_id=record.event_id,
+            event_timestamp=self._format_utc_timestamp(
+                record.event_timestamp or record.created_at
+            ),
             attack_type=record.attack_type,
             risk_score=record.risk_score,
             risk_level=record.risk_level,
@@ -280,6 +364,16 @@ class AlertRepository:
             analyst_note=record.analyst_note,
             handled_by=record.handled_by,
             handled_at=record.handled_at.isoformat() if record.handled_at else None,
+            llm_used=record.llm_used,
+            llm_skipped_reason=record.llm_skipped_reason,
+            llm_summary=record.llm_summary,
+            llm_model=record.llm_model,
+            llm_provider=record.llm_provider,
+            llm_latency_ms=record.llm_latency_ms,
+            llm_prompt_tokens=record.llm_prompt_tokens,
+            llm_completion_tokens=record.llm_completion_tokens,
+            llm_total_tokens=record.llm_total_tokens,
+            llm_error=record.llm_error,
         )
 
     def _json(self, value: object) -> str:
@@ -359,3 +453,45 @@ class AlertRepository:
             return None
 
         return model_class.model_validate(json.loads(raw))
+
+    def _to_utc_naive(self, value: str) -> datetime:
+        """
+        Convert an ISO timestamp to a UTC datetime suitable for SQLite storage.
+
+        Parameters:
+         value - ISO timestamp string from a security alert
+
+        Returns:
+         UTC datetime without timezone info for consistent SQLite storage
+
+        Raises:
+         ValueError - raised when the timestamp cannot be parsed
+        """
+
+        parsed = datetime.fromisoformat(value)
+
+        if parsed.tzinfo is None:
+            return parsed
+
+        return parsed.astimezone(UTC).replace(tzinfo=None)
+
+    def _format_utc_timestamp(self, value: datetime) -> str:
+        """
+        Format a database datetime as an explicit UTC ISO timestamp.
+
+        Parameters:
+         value - database datetime value
+
+        Returns:
+         ISO timestamp string with UTC timezone
+
+        Raises:
+         None
+        """
+
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=UTC)
+        else:
+            value = value.astimezone(UTC)
+
+        return value.isoformat()

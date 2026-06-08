@@ -20,6 +20,7 @@ export function AlertTable({ alerts, selectedAlertId, onSelect }: AlertTableProp
           <thead>
             <tr>
               <th>Risk</th>
+              <th>Time</th>
               <th>Attack</th>
               <th>Status</th>
               <th>Source</th>
@@ -37,6 +38,9 @@ export function AlertTable({ alerts, selectedAlertId, onSelect }: AlertTableProp
               >
                 <td>
                   <RiskBadge level={alert.risk_level} />
+                </td>
+                <td>
+                  <span className="mono">{formatTimestamp(alert.event_timestamp)}</span>
                 </td>
                 <td>
                   <strong>{alert.attack_type}</strong>
@@ -66,7 +70,7 @@ export function AlertTable({ alerts, selectedAlertId, onSelect }: AlertTableProp
             ))}
             {alerts.length === 0 ? (
               <tr>
-                <td className="empty-row" colSpan={7}>
+                <td className="empty-row" colSpan={8}>
                   No alerts
                 </td>
               </tr>
@@ -76,4 +80,25 @@ export function AlertTable({ alerts, selectedAlertId, onSelect }: AlertTableProp
       </div>
     </section>
   );
+}
+
+function formatTimestamp(value?: string | null): string {
+  if (!value) {
+    return "Unknown";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).format(date);
 }

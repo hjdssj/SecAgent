@@ -24,7 +24,9 @@ class AlertRecord(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     alert_id: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
+    session_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
     event_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    event_timestamp: Mapped[datetime | None] = mapped_column(DateTime, index=True, nullable=True)
     attack_type: Mapped[str] = mapped_column(String(128), index=True, nullable=False)
     risk_score: Mapped[int] = mapped_column(Integer, nullable=False)
     risk_level: Mapped[str] = mapped_column(String(32), index=True, nullable=False)
@@ -54,6 +56,17 @@ class AlertRecord(Base):
     analyst_note: Mapped[str | None] = mapped_column(Text, nullable=True)
     handled_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
     handled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    llm_used: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    llm_skipped_reason: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    llm_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    llm_model: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    llm_provider: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    llm_latency_ms: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    llm_prompt_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    llm_completion_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    llm_total_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    llm_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(

@@ -1,4 +1,5 @@
-from uuid import uuid4
+from datetime import UTC, datetime
+from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from app.analysis.schemas import RiskScoreBreakdown, RiskScoreItem
 from app.models.alert import MitreTechnique, SecurityAlert
@@ -24,6 +25,10 @@ class DecisionAgent:
         "SQL Injection": 82,
         "Path Traversal": 76,
         "XSS": 68,
+        "SSRF": 78,
+        "Authentication Bypass": 74,
+        "File Upload": 72,
+        "Brute Force": 62,
         "Automated Scanner": 55,
         "Unknown": 25,
     }
@@ -44,6 +49,22 @@ class DecisionAgent:
         "Command Injection": MitreTechnique(
             technique_id="T1059",
             name="Command and Scripting Interpreter",
+        ),
+        "SSRF": MitreTechnique(
+            technique_id="T1190",
+            name="Exploit Public-Facing Application",
+        ),
+        "Authentication Bypass": MitreTechnique(
+            technique_id="T1190",
+            name="Exploit Public-Facing Application",
+        ),
+        "File Upload": MitreTechnique(
+            technique_id="T1190",
+            name="Exploit Public-Facing Application",
+        ),
+        "Brute Force": MitreTechnique(
+            technique_id="T1110",
+            name="Brute Force",
         ),
     }
 
@@ -68,6 +89,7 @@ class DecisionAgent:
         score_breakdown.risk_level = risk_level
         target = event.path or event.url or "unknown"
         event_id = event.event_id or f"event-{uuid4().hex[:12]}"
+        event_timestamp = event.timestamp or datetime.now(UTC)
         mitre = self._map_mitre(parsed.attack_type)
         recommendations = self._recommendations(
             parsed.attack_type,
@@ -82,8 +104,9 @@ class DecisionAgent:
         )
 
         return SecurityAlert(
-            alert_id=f"alert-{uuid4().hex[:12]}",
+            alert_id=self._alert_id(event_id),
             event_id=event_id,
+            event_timestamp=event_timestamp.isoformat(),
             attack_type=parsed.attack_type,
             risk_score=risk_score,
             risk_level=risk_level,
@@ -96,6 +119,22 @@ class DecisionAgent:
             report_markdown=report_markdown,
             score_breakdown=score_breakdown,
         )
+
+    def _alert_id(self, event_id: str) -> str:
+        """
+        Build a stable alert ID from a source event ID.
+
+        Parameters:
+         event_id - normalized security event identifier
+
+        Returns:
+         Stable alert identifier used to deduplicate repeated analysis
+
+        Raises:
+         None
+        """
+
+        return f"alert-{uuid5(NAMESPACE_URL, event_id).hex[:12]}"
 
     def _score(self, parsed: ParsedSecurityEvent) -> int:
         """
@@ -277,6 +316,22 @@ class DecisionAgent:
             "Command Injection": [
                 f"检查 {target} 是否将用户输入拼接到系统命令中。",
                 "禁用不必要的命令执行入口并增加参数白名单。",
+            ],
+            "SSRF": [
+                f"检查 {target} 是否存在服务端代请求、URL 抓取或回调地址可控风险。",
+                "限制服务端可访问的内网地址、云元数据地址和协议类型。",
+            ],
+            "Brute Force": [
+                f"检查 {target} 是否存在异常登录失败、撞库或高频认证请求。",
+                "对相关账号和源 IP 启用速率限制、验证码或临时阻断策略。",
+            ],
+            "File Upload": [
+                f"检查 {target} 的上传类型校验、文件内容检测和存储目录执行权限。",
+                "隔离上传目录并确认服务端不会直接执行用户上传文件。",
+            ],
+            "Authentication Bypass": [
+                f"检查 {target} 的鉴权中间件、会话校验和越权访问控制。",
+                "回溯同源请求是否访问了需要登录或高权限的接口。",
             ],
         }
 

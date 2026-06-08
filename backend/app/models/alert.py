@@ -33,7 +33,9 @@ class SecurityAlert(BaseModel):
 
     Parameters:
      alert_id - 告警唯一标识
+     session_id - analysis session identifier used for follow-up context
      event_id - 该告警对应的原始安全事件唯一标识
+     event_timestamp - 原始安全事件发生时间
      attack_type - 识别出的攻击类型，例如 SQL Injection、XSS 或 Path Traversal
      risk_score - 0 到 100 之间的风险分数
      risk_level - 标准化风险等级，只能是 low、medium、high 或 critical
@@ -55,6 +57,16 @@ class SecurityAlert(BaseModel):
      asset_name - target asset name inferred from enterprise context
      asset_criticality - target asset criticality inferred from enterprise context
      context_references - enterprise context references used by triage
+     llm_used - whether an LLM generated an analyst report
+     llm_skipped_reason - reason why LLM report generation was skipped
+     llm_summary - concise LLM-generated analyst summary
+     llm_model - LLM model used for report generation
+     llm_provider - LLM provider used for report generation
+     llm_latency_ms - LLM call latency in milliseconds
+     llm_prompt_tokens - prompt tokens returned by provider when available
+     llm_completion_tokens - completion tokens returned by provider when available
+     llm_total_tokens - total tokens returned by provider when available
+     llm_error - LLM failure reason when report generation failed
 
     Returns:
      一个可用于 API 响应和前端展示的结构化安全告警对象
@@ -64,7 +76,9 @@ class SecurityAlert(BaseModel):
     """
 
     alert_id: str
+    session_id: Optional[str] = None
     event_id: str
+    event_timestamp: Optional[str] = None
     attack_type: str
     risk_score: int = Field(default=0, ge=0, le=100)
     risk_level: RiskLevel
@@ -89,3 +103,13 @@ class SecurityAlert(BaseModel):
     analyst_note: Optional[str] = None
     handled_by: Optional[str] = None
     handled_at: Optional[str] = None
+    llm_used: bool = False
+    llm_skipped_reason: Optional[str] = None
+    llm_summary: Optional[str] = None
+    llm_model: Optional[str] = None
+    llm_provider: Optional[str] = None
+    llm_latency_ms: float = 0.0
+    llm_prompt_tokens: Optional[int] = None
+    llm_completion_tokens: Optional[int] = None
+    llm_total_tokens: Optional[int] = None
+    llm_error: Optional[str] = None

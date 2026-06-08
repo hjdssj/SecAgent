@@ -4,15 +4,18 @@ import {
   FileText,
   Gauge,
   ListChecks,
+  MessageSquareText,
   Network,
   Save,
   Server,
   ShieldCheck,
   Timer,
+  CalendarClock,
   UserCheck,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { AlertStatus, SecurityAlert } from "../types/alert";
+import { FollowupChat } from "./FollowupChat";
 import { RiskBadge } from "./RiskBadge";
 import { ReportPanel } from "./ReportPanel";
 
@@ -68,6 +71,11 @@ export function AlertDetail({ alert, isUpdating, onStatusUpdate }: AlertDetailPr
         <Metric icon={<Crosshair size={17} />} label="Target" value={alert.target} />
         <Metric icon={<Brain size={17} />} label="Score" value={String(alert.risk_score)} />
         <Metric
+          icon={<CalendarClock size={17} />}
+          label="Attack Time"
+          value={formatTimestamp(alert.event_timestamp)}
+        />
+        <Metric
           icon={<Network size={17} />}
           label="Confidence"
           value={`${Math.round(alert.confidence * 100)}%`}
@@ -100,6 +108,34 @@ export function AlertDetail({ alert, isUpdating, onStatusUpdate }: AlertDetailPr
           <AnalysisGroup title="Enabled" items={alert.analysis_metadata?.enabled_modules ?? []} />
           <AnalysisGroup title="Skipped" items={alert.analysis_metadata?.skipped_modules ?? []} />
         </div>
+      </section>
+
+      <FollowupChat sessionId={alert.session_id} />
+
+      <section className="llm-panel">
+        <div className="panel-heading">
+          <h2>
+            <span aria-hidden="true">
+              <MessageSquareText size={17} />
+            </span>
+            LLM Report
+          </h2>
+          <span>{alert.llm_used ? "Generated" : "Skipped"}</span>
+        </div>
+        <div className="llm-grid">
+          <TriageItem label="Used" value={alert.llm_used ? "Yes" : "No"} />
+          <TriageItem label="Provider" value={alert.llm_provider ?? "None"} />
+          <TriageItem label="Model" value={alert.llm_model ?? "None"} />
+          <TriageItem label="Latency" value={`${alert.llm_latency_ms ?? 0}ms`} />
+          <TriageItem label="Tokens" value={String(alert.llm_total_tokens ?? 0)} />
+          <TriageItem label="Skip/Error" value={alert.llm_error ?? alert.llm_skipped_reason ?? "None"} />
+        </div>
+        {alert.llm_summary ? (
+          <div className="llm-summary">
+            <span className="metric__label">Analyst Summary</span>
+            <p>{alert.llm_summary}</p>
+          </div>
+        ) : null}
       </section>
 
       <section className="score-panel">
@@ -299,6 +335,28 @@ function Metric({ icon, label, value, mono }: MetricProps) {
       </div>
     </div>
   );
+}
+
+function formatTimestamp(value?: string | null): string {
+  if (!value) {
+    return "Unknown";
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).format(date);
 }
 
 interface InfoBlockProps {

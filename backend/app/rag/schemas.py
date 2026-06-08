@@ -28,6 +28,58 @@ class KnowledgeDocument(BaseModel):
     content: str
 
 
+class KnowledgeUploadRequest(BaseModel):
+    """
+    Represent a markdown knowledge document upload request.
+
+    Parameters:
+     filename - requested markdown file name
+     content - markdown document content
+     overwrite - whether an existing document may be replaced
+
+    Returns:
+     Request body for writing a knowledge document
+
+    Raises:
+     None
+    """
+
+    filename: str
+    content: str
+    overwrite: bool = False
+
+
+class KnowledgeUploadResponse(BaseModel):
+    """
+    Represent the result of saving one knowledge document.
+
+    Parameters:
+     source - saved markdown file name
+     doc_id - saved document identifier
+     title - saved document title
+     category - inferred document category
+     tags - inferred security tags
+     chunk_count - number of searchable chunks generated from the document
+     overwritten - whether an existing file was replaced
+     message - operational note for vector index refresh
+
+    Returns:
+     Structured knowledge upload response
+
+    Raises:
+     None
+    """
+
+    source: str
+    doc_id: str
+    title: str
+    category: str
+    tags: list[str] = Field(default_factory=list)
+    chunk_count: int = 0
+    overwritten: bool = False
+    message: str = ""
+
+
 class KnowledgeChunk(BaseModel):
     """
     Represent one searchable knowledge chunk loaded from local documents.

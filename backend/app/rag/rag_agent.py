@@ -77,6 +77,23 @@ class RAGAgent:
             citations=citations,
         )
 
+    def refresh(self) -> None:
+        """
+        Clear cached knowledge chunks and retriever state.
+
+        Parameters:
+         None
+
+        Returns:
+         None
+
+        Raises:
+         None
+        """
+
+        self._chunks = None
+        self._retriever = None
+
     def enrich_alert(
         self,
         alert: SecurityAlert,

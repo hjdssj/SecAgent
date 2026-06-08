@@ -1,10 +1,11 @@
-import type { AlertStatus, SecurityAlert } from "../types/alert";
+import type { AlertStatus, RiskLevel, SecurityAlert } from "../types/alert";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000";
 
 export interface FetchRecentAlertsOptions {
   count?: number;
   status?: AlertStatus;
+  riskLevel?: RiskLevel;
   requiresHumanReview?: boolean;
 }
 
@@ -23,6 +24,10 @@ export async function fetchRecentAlerts(
 
   if (options.status) {
     params.set("status", options.status);
+  }
+
+  if (options.riskLevel) {
+    params.set("risk_level", options.riskLevel);
   }
 
   if (options.requiresHumanReview !== undefined) {
