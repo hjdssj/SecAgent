@@ -20,6 +20,10 @@ ENV/
 .env.*
 !.env.example
 
+# Local markdown notes
+*.md
+!README.md
+
 # Logs and runtime files
 *.log
 !data/sample_logs/*.log
