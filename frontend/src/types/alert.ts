@@ -47,7 +47,11 @@ export interface SecurityAlert {
   alert_id: string;
   session_id?: string | null;
   event_id: string;
+  event_ids: string[];
   event_timestamp?: string | null;
+  first_seen?: string | null;
+  last_seen?: string | null;
+  event_count: number;
   attack_type: string;
   risk_score: number;
   risk_level: RiskLevel;

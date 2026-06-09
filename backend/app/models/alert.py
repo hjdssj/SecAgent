@@ -78,7 +78,11 @@ class SecurityAlert(BaseModel):
     alert_id: str
     session_id: Optional[str] = None
     event_id: str
+    event_ids: list[str] = Field(default_factory=list)
     event_timestamp: Optional[str] = None
+    first_seen: Optional[str] = None
+    last_seen: Optional[str] = None
+    event_count: int = Field(default=1, ge=1)
     attack_type: str
     risk_score: int = Field(default=0, ge=0, le=100)
     risk_level: RiskLevel

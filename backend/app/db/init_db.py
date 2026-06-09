@@ -5,7 +5,12 @@ from app.db.session import Base, engine, ensure_sqlite_parent_dir
 
 SQLITE_ALERT_COLUMN_UPGRADES = {
     "session_id": "VARCHAR(64)",
+    "event_ids_json": "TEXT NOT NULL DEFAULT '[]'",
     "event_timestamp": "DATETIME",
+    "first_seen": "DATETIME",
+    "last_seen": "DATETIME",
+    "event_count": "INTEGER NOT NULL DEFAULT 1",
+    "aggregation_key": "VARCHAR(768)",
     "llm_used": "BOOLEAN NOT NULL DEFAULT 0",
     "llm_skipped_reason": "VARCHAR(128)",
     "llm_summary": "TEXT",

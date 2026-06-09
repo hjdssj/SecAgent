@@ -7,7 +7,7 @@ from typing import Any, Optional
 from urllib.parse import unquote, urlsplit
 
 from app.collector.modsecurity_parser import ModSecurityParser
-from app.core.config import PROJECT_ROOT, get_csv_env, get_path_env
+from app.core.config import PROJECT_ROOT, get_bool_env, get_csv_env, get_path_env
 from app.models.event import SecurityEvent
 from app.storage.redis_client import publish_event
 
@@ -16,6 +16,46 @@ DEFAULT_AUDIT_LOG_PATH = (
 )
 DEFAULT_OFFSET_PATH = PROJECT_ROOT / "data" / "waf_logs" / ".collector.offset"
 DEFAULT_IGNORED_PATHS = ["/__waf_health"]
+DEFAULT_STATIC_EXTENSIONS = [
+    ".css",
+    ".js",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".svg",
+    ".ico",
+    ".woff",
+    ".woff2",
+    ".map",
+]
+DEFAULT_SENSITIVE_PATHS = [
+    "/admin",
+    "/api",
+    "/login",
+    "/upload",
+    "/download",
+    "/search",
+]
+DEFAULT_SUSPICIOUS_USER_AGENTS = [
+    "sqlmap",
+    "nikto",
+    "nmap",
+    "masscan",
+    "acunetix",
+    "nessus",
+]
+DEFAULT_ATTACK_KEYWORDS = [
+    "union select",
+    " or ",
+    "<script",
+    "../",
+    "..%2f",
+    "/etc/passwd",
+    "sleep(",
+    "benchmark(",
+    "cmd=",
+]
 
 
 class WafLogCollector:
@@ -56,6 +96,31 @@ class WafLogCollector:
         self.offset_path = offset_path or get_path_env("WAF_COLLECTOR_OFFSET_PATH", DEFAULT_OFFSET_PATH)
         self.ignored_paths = set(
             get_csv_env("WAF_COLLECTOR_IGNORED_PATHS", DEFAULT_IGNORED_PATHS)
+        )
+        self.drop_benign_events = get_bool_env("WAF_COLLECTOR_DROP_BENIGN", True)
+        self.static_extensions = tuple(
+            item.lower()
+            for item in get_csv_env(
+                "WAF_COLLECTOR_STATIC_EXTENSIONS",
+                DEFAULT_STATIC_EXTENSIONS,
+            )
+        )
+        self.sensitive_paths = tuple(
+            get_csv_env("WAF_COLLECTOR_SENSITIVE_PATHS", DEFAULT_SENSITIVE_PATHS)
+        )
+        self.suspicious_user_agents = tuple(
+            item.lower()
+            for item in get_csv_env(
+                "WAF_COLLECTOR_SUSPICIOUS_USER_AGENTS",
+                DEFAULT_SUSPICIOUS_USER_AGENTS,
+            )
+        )
+        self.attack_keywords = tuple(
+            item.lower()
+            for item in get_csv_env(
+                "WAF_COLLECTOR_ATTACK_KEYWORDS",
+                DEFAULT_ATTACK_KEYWORDS,
+            )
         )
         self.parser = ModSecurityParser()
 
@@ -250,7 +315,126 @@ class WafLogCollector:
          None
         """
 
-        return event.path in self.ignored_paths
+        if event.path in self.ignored_paths:
+            return True
+
+        return not self._should_collect_event(event)
+
+    def _should_collect_event(self, event: SecurityEvent) -> bool:
+        """
+        Decide whether a normalized event is security-relevant enough to publish.
+
+        Parameters:
+         event - normalized security event parsed from WAF logs
+
+        Returns:
+         True when the event should enter Redis for analysis, otherwise False
+
+        Raises:
+         None
+        """
+
+        if not self.drop_benign_events:
+            return True
+
+        if event.waf_rule_id:
+            return True
+
+        status = event.status or 0
+
+        if self._is_static_asset(event.path) and status < 500:
+            return False
+
+        if status >= 400:
+            return True
+
+        if self._has_suspicious_user_agent(event.user_agent):
+            return True
+
+        if self._has_attack_keyword(event):
+            return True
+
+        return self._is_sensitive_interaction(event)
+
+    def _is_static_asset(self, path: str) -> bool:
+        """
+        Decide whether a request path points to a static asset.
+
+        Parameters:
+         path - request path parsed from the WAF log
+
+        Returns:
+         True when the path has a configured static file extension
+
+        Raises:
+         None
+        """
+
+        normalized = path.lower()
+        return any(normalized.endswith(extension) for extension in self.static_extensions)
+
+    def _has_suspicious_user_agent(self, user_agent: str) -> bool:
+        """
+        Decide whether a User-Agent looks like a known scanner.
+
+        Parameters:
+         user_agent - request User-Agent value
+
+        Returns:
+         True when the User-Agent contains a configured suspicious token
+
+        Raises:
+         None
+        """
+
+        normalized = user_agent.lower()
+        return any(token in normalized for token in self.suspicious_user_agents)
+
+    def _has_attack_keyword(self, event: SecurityEvent) -> bool:
+        """
+        Decide whether request text contains a configured attack keyword.
+
+        Parameters:
+         event - normalized security event parsed from WAF logs
+
+        Returns:
+         True when URL, query, message, or raw log contains an attack keyword
+
+        Raises:
+         None
+        """
+
+        haystack = " ".join(
+            [
+                event.url,
+                event.query,
+                event.waf_message or "",
+                event.raw_log,
+            ]
+        ).lower()
+        return any(keyword in haystack for keyword in self.attack_keywords)
+
+    def _is_sensitive_interaction(self, event: SecurityEvent) -> bool:
+        """
+        Decide whether a request touches a sensitive route with useful context.
+
+        Parameters:
+         event - normalized security event parsed from WAF logs
+
+        Returns:
+         True when the path is sensitive and includes query, body-like method, or redirect/error context
+
+        Raises:
+         None
+        """
+
+        path = event.path or ""
+
+        if not any(path == item or path.startswith(f"{item}/") for item in self.sensitive_paths):
+            return False
+
+        status = event.status or 0
+        return bool(event.query) or event.method.upper() not in {"GET", "HEAD"} or status >= 300
 
     def _first_message(self, messages: list[Any]) -> dict[str, Optional[str]]:
         """

@@ -1,14 +1,17 @@
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.analysis.schemas import AnalysisMetadata, RiskScoreBreakdown
+from app.core.config import get_int_env
 from app.db.models import AlertRecord
 from app.models.alert import MitreTechnique, SecurityAlert
 from app.models.alert_update import AlertStatusUpdate
+
+AGGREGATION_WINDOW_SECONDS = get_int_env("ALERT_AGGREGATION_WINDOW_SECONDS", 300)
 
 
 class AlertRepository:
@@ -55,13 +58,23 @@ class AlertRepository:
          None
         """
 
+        event_time = self._alert_event_time(alert)
         record = self._get_record(alert.alert_id) or self._get_record_by_event_id(alert.event_id)
+        is_exact_event_update = record is not None
+
+        if record is None:
+            record = self._get_recent_aggregate(alert, event_time)
 
         if record is None:
             record = AlertRecord(alert_id=alert.alert_id, event_id=alert.event_id)
             self.session.add(record)
 
-        self._apply_alert(record, alert)
+        self._apply_alert(
+            record,
+            alert,
+            event_time=event_time,
+            increment_event_count=not is_exact_event_update,
+        )
 
         try:
             self.session.commit()
@@ -72,7 +85,12 @@ class AlertRepository:
             if record is None:
                 raise
 
-            self._apply_alert(record, alert)
+            self._apply_alert(
+                record,
+                alert,
+                event_time=event_time,
+                increment_event_count=False,
+            )
             self.session.commit()
 
         self.session.refresh(record)
@@ -239,18 +257,60 @@ class AlertRepository:
 
         statement = (
             select(AlertRecord)
-            .where(AlertRecord.event_id == event_id)
+            .where(
+                or_(
+                    AlertRecord.event_id == event_id,
+                    AlertRecord.event_ids_json.like(f'%"{event_id}"%'),
+                )
+            )
             .order_by(AlertRecord.updated_at.desc())
         )
         return self.session.scalars(statement).first()
 
-    def _apply_alert(self, record: AlertRecord, alert: SecurityAlert) -> None:
+    def _get_recent_aggregate(
+        self,
+        alert: SecurityAlert,
+        event_time: datetime,
+    ) -> AlertRecord | None:
+        """
+        Return a recent aggregate record for the same alert category.
+
+        Parameters:
+         alert - incoming security alert
+         event_time - normalized event time used for window matching
+
+        Returns:
+         Existing aggregate alert when found, otherwise None
+
+        Raises:
+         None
+        """
+
+        aggregation_key = self._aggregation_key(alert)
+        window_start = event_time - timedelta(seconds=AGGREGATION_WINDOW_SECONDS)
+        statement = (
+            select(AlertRecord)
+            .where(AlertRecord.aggregation_key == aggregation_key)
+            .where(AlertRecord.last_seen >= window_start)
+            .order_by(AlertRecord.last_seen.desc(), AlertRecord.updated_at.desc())
+        )
+        return self.session.scalars(statement).first()
+
+    def _apply_alert(
+        self,
+        record: AlertRecord,
+        alert: SecurityAlert,
+        event_time: datetime | None = None,
+        increment_event_count: bool = True,
+    ) -> None:
         """
         Copy SecurityAlert fields onto a database record.
 
         Parameters:
          record - database record to update
          alert - security alert source object
+         event_time - normalized event time used for aggregate fields
+         increment_event_count - whether this save represents a new event in the aggregate
 
         Returns:
          None
@@ -260,14 +320,33 @@ class AlertRepository:
         """
 
         record.event_id = alert.event_id
+        record.event_ids_json = self._json(
+            self._merge_event_ids(record.event_ids_json, alert)
+        )
         record.session_id = alert.session_id
+        record.aggregation_key = self._aggregation_key(alert)
+
+        if event_time is None:
+            event_time = self._alert_event_time(alert)
 
         if alert.event_timestamp:
-            record.event_timestamp = self._to_utc_naive(alert.event_timestamp)
+            record.event_timestamp = event_time
+
+        record.first_seen = self._min_datetime(record.first_seen, event_time)
+        record.last_seen = self._max_datetime(record.last_seen, event_time)
+        record.event_count = self._next_event_count(
+            record,
+            alert,
+            increment_event_count,
+        )
 
         record.attack_type = alert.attack_type
-        record.risk_score = alert.risk_score
-        record.risk_level = alert.risk_level
+        record.risk_score = self._merged_risk_score(
+            record,
+            alert,
+            increment_event_count,
+        )
+        record.risk_level = self._level(record.risk_score)
         record.source_ip = alert.source_ip
         record.target = alert.target
         record.confidence = alert.confidence
@@ -280,10 +359,18 @@ class AlertRepository:
         record.analysis_mode = alert.analysis_mode
         record.score_breakdown_json = self._optional_json(alert.score_breakdown)
         record.analysis_metadata_json = self._optional_json(alert.analysis_metadata)
-        record.status = alert.status
-        record.automation_decision = alert.automation_decision
+        record.status = self._merged_status(record, alert, increment_event_count)
+        record.automation_decision = self._merged_automation_decision(
+            record,
+            alert,
+            increment_event_count,
+        )
         record.triage_reason = alert.triage_reason
-        record.requires_human_review = alert.requires_human_review
+        record.requires_human_review = (
+            record.requires_human_review or alert.requires_human_review
+            if increment_event_count
+            else alert.requires_human_review
+        )
         record.business_owner = alert.business_owner
         record.asset_name = alert.asset_name
         record.asset_criticality = alert.asset_criticality
@@ -337,9 +424,17 @@ class AlertRepository:
             alert_id=record.alert_id,
             session_id=record.session_id,
             event_id=record.event_id,
+            event_ids=self._load_json(record.event_ids_json, []),
             event_timestamp=self._format_utc_timestamp(
                 record.event_timestamp or record.created_at
             ),
+            first_seen=self._format_utc_timestamp(
+                record.first_seen or record.event_timestamp or record.created_at
+            ),
+            last_seen=self._format_utc_timestamp(
+                record.last_seen or record.event_timestamp or record.updated_at
+            ),
+            event_count=record.event_count or 1,
             attack_type=record.attack_type,
             risk_score=record.risk_score,
             risk_level=record.risk_level,
@@ -433,6 +528,281 @@ class AlertRepository:
             return fallback
 
         return json.loads(raw)
+
+    def _merge_event_ids(self, raw: str | None, alert: SecurityAlert) -> list[str]:
+        """
+        Merge event IDs already stored on an aggregate with an incoming alert.
+
+        Parameters:
+         raw - JSON list of event IDs stored on the database record
+         alert - incoming security alert
+
+        Returns:
+         Ordered unique event IDs represented by the aggregate
+
+        Raises:
+         None
+        """
+
+        merged: list[str] = []
+
+        for event_id in [*self._load_json(raw, []), *alert.event_ids, alert.event_id]:
+            if event_id and event_id not in merged:
+                merged.append(event_id)
+
+        return merged
+
+    def _next_event_count(
+        self,
+        record: AlertRecord,
+        alert: SecurityAlert,
+        increment_event_count: bool,
+    ) -> int:
+        """
+        Calculate aggregate event count for a saved alert.
+
+        Parameters:
+         record - database alert record being updated
+         alert - incoming security alert
+         increment_event_count - whether this save represents a new event in the aggregate
+
+        Returns:
+         Updated aggregate event count
+
+        Raises:
+         None
+        """
+
+        current_count = record.event_count or 0
+        incoming_count = alert.event_count or 1
+
+        if current_count <= 0:
+            return max(incoming_count, 1)
+
+        if not increment_event_count:
+            return max(current_count, incoming_count)
+
+        return max(current_count + 1, incoming_count)
+
+    def _aggregation_key(self, alert: SecurityAlert) -> str:
+        """
+        Build the key used to merge repeated alert traffic.
+
+        Parameters:
+         alert - security alert to group
+
+        Returns:
+         Stable aggregation key for source, target, and attack type
+
+        Raises:
+         None
+        """
+
+        return "|".join(
+            [
+                alert.source_ip.strip().lower(),
+                alert.target.strip().lower(),
+                alert.attack_type.strip().lower(),
+            ]
+        )
+
+    def _merged_risk_score(
+        self,
+        record: AlertRecord,
+        alert: SecurityAlert,
+        increment_event_count: bool,
+    ) -> int:
+        """
+        Calculate the risk score to store on an alert or aggregate.
+
+        Parameters:
+         record - database alert record being updated
+         alert - incoming security alert
+         increment_event_count - whether this save represents a new event in the aggregate
+
+        Returns:
+         Incoming score for exact updates, or the highest score for aggregate updates
+
+        Raises:
+         None
+        """
+
+        if not increment_event_count:
+            return alert.risk_score
+
+        current_score = getattr(record, "risk_score", None)
+
+        if current_score is None:
+            return alert.risk_score
+
+        return max(current_score, alert.risk_score)
+
+    def _level(self, score: int) -> str:
+        """
+        Convert a risk score into a risk level.
+
+        Parameters:
+         score - risk score from 0 to 100
+
+        Returns:
+         Risk level string
+
+        Raises:
+         None
+        """
+
+        if score >= 90:
+            return "critical"
+        if score >= 70:
+            return "high"
+        if score >= 40:
+            return "medium"
+        return "low"
+
+    def _merged_status(
+        self,
+        record: AlertRecord,
+        alert: SecurityAlert,
+        increment_event_count: bool,
+    ) -> str:
+        """
+        Calculate the workflow status to store on an alert or aggregate.
+
+        Parameters:
+         record - database alert record being updated
+         alert - incoming security alert
+         increment_event_count - whether this save represents a new event in the aggregate
+
+        Returns:
+         Incoming status for exact updates, or the higher-priority status for aggregate updates
+
+        Raises:
+         None
+        """
+
+        if not increment_event_count:
+            return alert.status
+
+        priority = {
+            "false_positive": 0,
+            "resolved": 1,
+            "auto_triaged": 2,
+            "investigating": 3,
+            "needs_review": 4,
+        }
+        current_status = record.status or alert.status
+
+        if priority.get(alert.status, 0) >= priority.get(current_status, 0):
+            return alert.status
+
+        return current_status
+
+    def _merged_automation_decision(
+        self,
+        record: AlertRecord,
+        alert: SecurityAlert,
+        increment_event_count: bool,
+    ) -> str:
+        """
+        Calculate the automation decision to store on an alert or aggregate.
+
+        Parameters:
+         record - database alert record being updated
+         alert - incoming security alert
+         increment_event_count - whether this save represents a new event in the aggregate
+
+        Returns:
+         Incoming decision for exact updates, or the higher-priority decision for aggregate updates
+
+        Raises:
+         None
+        """
+
+        if not increment_event_count:
+            return alert.automation_decision
+
+        priority = {
+            "observe_only": 0,
+            "auto_close": 1,
+            "notify_owner": 2,
+            "block_ip_recommended": 3,
+            "human_review_required": 4,
+        }
+        current_decision = record.automation_decision or alert.automation_decision
+
+        if priority.get(alert.automation_decision, 0) >= priority.get(current_decision, 0):
+            return alert.automation_decision
+
+        return current_decision
+
+    def _alert_event_time(self, alert: SecurityAlert) -> datetime:
+        """
+        Return a UTC-naive event time for one alert.
+
+        Parameters:
+         alert - security alert containing optional event timestamp fields
+
+        Returns:
+         UTC-naive event datetime
+
+        Raises:
+         None
+        """
+
+        raw_time = alert.event_timestamp or alert.last_seen or alert.first_seen
+
+        if raw_time:
+            return self._to_utc_naive(raw_time)
+
+        return datetime.now(UTC).replace(tzinfo=None)
+
+    def _min_datetime(
+        self,
+        current: datetime | None,
+        candidate: datetime,
+    ) -> datetime:
+        """
+        Return the earlier of two optional datetimes.
+
+        Parameters:
+         current - existing datetime value
+         candidate - candidate datetime value
+
+        Returns:
+         Earlier datetime
+
+        Raises:
+         None
+        """
+
+        if current is None:
+            return candidate
+
+        return min(current, candidate)
+
+    def _max_datetime(
+        self,
+        current: datetime | None,
+        candidate: datetime,
+    ) -> datetime:
+        """
+        Return the later of two optional datetimes.
+
+        Parameters:
+         current - existing datetime value
+         candidate - candidate datetime value
+
+        Returns:
+         Later datetime
+
+        Raises:
+         None
+        """
+
+        if current is None:
+            return candidate
+
+        return max(current, candidate)
 
     def _load_optional_model(self, raw: str | None, model_class):
         """

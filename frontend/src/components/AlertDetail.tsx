@@ -70,10 +70,21 @@ export function AlertDetail({ alert, isUpdating, onStatusUpdate }: AlertDetailPr
         <Metric icon={<Server size={17} />} label="Source" value={alert.source_ip} mono />
         <Metric icon={<Crosshair size={17} />} label="Target" value={alert.target} />
         <Metric icon={<Brain size={17} />} label="Score" value={String(alert.risk_score)} />
+        <Metric icon={<ListChecks size={17} />} label="Events" value={String(alert.event_count ?? 1)} />
         <Metric
           icon={<CalendarClock size={17} />}
           label="Attack Time"
           value={formatTimestamp(alert.event_timestamp)}
+        />
+        <Metric
+          icon={<CalendarClock size={17} />}
+          label="First Seen"
+          value={formatTimestamp(alert.first_seen)}
+        />
+        <Metric
+          icon={<CalendarClock size={17} />}
+          label="Last Seen"
+          value={formatTimestamp(alert.last_seen)}
         />
         <Metric
           icon={<Network size={17} />}

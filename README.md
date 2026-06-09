@@ -14,6 +14,7 @@ SecRAG Agent is a SOC-oriented security analysis and response demo system. It co
 - Optional OpenAI-compatible LLM report generation for high-value alerts.
 - SQLite / SQLAlchemy alert persistence with workflow status updates.
 - Local threat intelligence, Redis-backed source IP memory, and optional Milvus long-term analysis memory with similar-event recall.
+- White-traffic control with collector-side benign filtering, suspicious `200` preservation, and time-window alert aggregation.
 - FastAPI backend and React SOC dashboard.
 
 ## Architecture
@@ -24,6 +25,7 @@ Attack traffic
   -> business-demo upstream service
   -> WAF audit log
   -> waf_log_collector.py
+  -> benign traffic filtering / suspicious 200 preservation
   -> Redis Stream: security:events
   -> event_consumer.py
   -> LogParserAgent
@@ -38,11 +40,62 @@ Attack traffic
   -> EventMemory
   -> LLMReportEnhancer
   -> LongTermMemoryStore
+  -> event_id deduplication / alert aggregation
   -> Redis Stream: security:alerts
   -> DB: alerts
   -> FastAPI /api/alerts/recent
   -> React SOC Console
 ```
+
+## Traffic Funnel and Noise Control
+
+SecRAG Agent is designed to analyze WAF security events, not full web access traffic. In a real environment, normal business traffic is the majority, WAF-blocked attacks are a minority, and SOC-worthy alerts are an even smaller subset.
+
+The runtime pipeline uses a funnel:
+
+```text
+Full HTTP traffic
+  -> WAF / ModSecurity RelevantOnly audit logging
+  -> Collector filtering
+  -> Redis security events
+  -> Rule analysis / optional RAG / optional LLM
+  -> Aggregated SOC alerts
+```
+
+Collector-side filtering keeps clear benign traffic out of Redis by default:
+
+```text
+drop:
+  health checks
+  static assets
+  normal 200 requests without rule hits or suspicious features
+
+keep:
+  WAF rule hits
+  HTTP status >= 400
+  suspicious User-Agent values such as sqlmap / nikto / nmap
+  attack keywords in URL, query, message, or raw log
+  sensitive-path interactions on /login, /admin, /api, /upload, /download, /search
+```
+
+The system does not assume `200` means benign. A direct-`200` attack can still be preserved when it touches sensitive paths, contains attack features, uses scanner-like User-Agent values, or matches suspicious behavior. The goal is not to analyze every `200`, but to route suspicious `200` traffic into `observe` or `analyze` paths while dropping ordinary white traffic.
+
+Repeated alerts are aggregated in the database. By default, events with the same:
+
+```text
+source_ip + target + attack_type
+```
+
+within `ALERT_AGGREGATION_WINDOW_SECONDS=300` are merged into one alert with:
+
+```text
+event_count
+event_ids
+first_seen
+last_seen
+```
+
+Late LLM enrichment for the same `event_id` updates the existing alert without increasing `event_count`. Repeated lower-risk events do not downgrade an existing high-risk aggregate.
 
 ## Tech Stack
 
@@ -77,7 +130,7 @@ MODSEC_RULE_ENGINE=DetectionOnly
 VITE_API_BASE_URL=http://YOUR_SERVER:8000
 ```
 
-See [docs/deployment.md](docs/deployment.md).
+For local deployment, the compose profile in `docker-compose.prod.yml` is the source of truth.
 
 ## Quick Start
 
@@ -197,7 +250,6 @@ infra/waf/      # WAF image and Nginx template
 infra/business-demo/ # local upstream service protected by WAF for demos
 docker-compose.prod.yml # single-server deployment profile
 scripts/        # demo and utility scripts
-docs/           # architecture, demo, API, troubleshooting
 tests/          # focused backend tests
 ```
 
@@ -274,4 +326,5 @@ The project has completed the MVP stages:
 18. Optional Milvus long-term analysis memory write path
 19. Similar historical event recall from Milvus long-term memory
 20. RAG knowledge-base document upload API and frontend Knowledge page
+21. Collector-side white-traffic filtering, suspicious `200` preservation, and alert aggregation for SOC noise control
 ```

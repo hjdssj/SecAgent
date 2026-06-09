@@ -10,13 +10,24 @@ sys.path.append(str(BACKEND_DIR))
 from app.collector.waf_log_collector import WafLogCollector
 
 
-def build_audit_entry(uri: str, unique_id: str) -> dict:
+def build_audit_entry(
+    uri: str,
+    unique_id: str,
+    status: int = 200,
+    rule_id: str | None = "100001",
+    user_agent: str = "pytest",
+    method: str = "GET",
+) -> dict:
     """
     Build a minimal ModSecurity audit entry for collector tests.
 
     Parameters:
      uri - request URI stored in the audit entry
      unique_id - transaction unique ID
+     status - HTTP response status stored in the audit entry
+     rule_id - optional ModSecurity rule ID stored in the audit entry
+     user_agent - request User-Agent stored in the audit entry
+     method - request method stored in the audit entry
 
     Returns:
      Minimal ModSecurity JSON audit entry
@@ -31,23 +42,27 @@ def build_audit_entry(uri: str, unique_id: str) -> dict:
             "client_ip": "127.0.0.1",
             "time_stamp": "Mon Jun  8 01:11:20 2026",
             "request": {
-                "method": "GET",
+                "method": method,
                 "uri": uri,
                 "headers": {
-                    "User-Agent": "pytest",
+                    "User-Agent": user_agent,
                 },
             },
             "response": {
-                "http_code": 200,
+                "http_code": status,
             },
-            "messages": [
-                {
-                    "message": "test message",
-                    "details": {
-                        "ruleId": "100001",
-                    },
-                }
-            ],
+            "messages": (
+                [
+                    {
+                        "message": "test message",
+                        "details": {
+                            "ruleId": rule_id,
+                        },
+                    }
+                ]
+                if rule_id
+                else []
+            ),
         }
     }
 
@@ -134,3 +149,54 @@ def test_waf_collector_parses_modsecurity_timestamp_as_utc() -> None:
     assert parsed is not None
     assert parsed.tzinfo == UTC
     assert parsed.isoformat() == "2026-06-08T01:11:20+00:00"
+
+
+def test_waf_collector_drops_benign_static_asset() -> None:
+    """
+    Verify collector drops obvious benign static asset traffic.
+
+    Parameters:
+     None
+
+    Returns:
+     None
+
+    Raises:
+     None
+    """
+
+    collector = WafLogCollector()
+    event = collector._entry_to_event(
+        build_audit_entry("/assets/app.js", "static", rule_id=None)
+    )
+
+    assert event is not None
+    assert collector._should_ignore_event(event) is True
+
+
+def test_waf_collector_keeps_suspicious_user_agent_without_rule() -> None:
+    """
+    Verify collector keeps scanner-looking traffic even without a WAF rule ID.
+
+    Parameters:
+     None
+
+    Returns:
+     None
+
+    Raises:
+     None
+    """
+
+    collector = WafLogCollector()
+    event = collector._entry_to_event(
+        build_audit_entry(
+            "/index",
+            "scanner",
+            rule_id=None,
+            user_agent="sqlmap/1.7",
+        )
+    )
+
+    assert event is not None
+    assert collector._should_ignore_event(event) is False

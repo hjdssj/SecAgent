@@ -22,6 +22,7 @@ services:
       REDIS_DEADLETTER_STREAM: "${REDIS_DEADLETTER_STREAM:-security:deadletter}"
       REDIS_MEMORY_PREFIX: "${REDIS_MEMORY_PREFIX:-memory:ip}"
       SECAGENT_DB_PATH: /app/data/secagent.db
+      ALERT_AGGREGATION_WINDOW_SECONDS: "${ALERT_AGGREGATION_WINDOW_SECONDS:-300}"
       BACKEND_CORS_ORIGINS: "${BACKEND_CORS_ORIGINS:-http://127.0.0.1:5173,http://localhost:5173}"
     volumes:
       - ./data:/app/data
@@ -98,6 +99,11 @@ services:
       WAF_AUDIT_LOG_PATH: /app/data/waf_logs/modsecurity/audit/audit.log
       WAF_COLLECTOR_OFFSET_PATH: /app/data/waf_logs/.collector.offset
       WAF_COLLECTOR_IGNORED_PATHS: "${WAF_COLLECTOR_IGNORED_PATHS:-/__waf_health}"
+      WAF_COLLECTOR_DROP_BENIGN: "${WAF_COLLECTOR_DROP_BENIGN:-true}"
+      WAF_COLLECTOR_STATIC_EXTENSIONS: "${WAF_COLLECTOR_STATIC_EXTENSIONS:-.css,.js,.png,.jpg,.jpeg,.gif,.svg,.ico,.woff,.woff2,.map}"
+      WAF_COLLECTOR_SENSITIVE_PATHS: "${WAF_COLLECTOR_SENSITIVE_PATHS:-/admin,/api,/login,/upload,/download,/search}"
+      WAF_COLLECTOR_SUSPICIOUS_USER_AGENTS: "${WAF_COLLECTOR_SUSPICIOUS_USER_AGENTS:-sqlmap,nikto,nmap,masscan,acunetix,nessus}"
+      WAF_COLLECTOR_ATTACK_KEYWORDS: "${WAF_COLLECTOR_ATTACK_KEYWORDS:-union select, or ,<script,../,..%2f,/etc/passwd,sleep(,benchmark(,cmd=}"
     volumes:
       - ./data:/app/data
     depends_on:
@@ -121,6 +127,7 @@ services:
       REDIS_DEADLETTER_STREAM: "${REDIS_DEADLETTER_STREAM:-security:deadletter}"
       REDIS_MEMORY_PREFIX: "${REDIS_MEMORY_PREFIX:-memory:ip}"
       SECAGENT_DB_PATH: /app/data/secagent.db
+      ALERT_AGGREGATION_WINDOW_SECONDS: "${ALERT_AGGREGATION_WINDOW_SECONDS:-300}"
       EVENT_CONSUMER_START_ID: "${EVENT_CONSUMER_START_ID:-0-0}"
       EVENT_CONSUMER_OFFSET_PATH: "${EVENT_CONSUMER_OFFSET_PATH:-/app/data/redis/.event_consumer.offset}"
       EVENT_CONSUMER_IGNORED_PATHS: "${EVENT_CONSUMER_IGNORED_PATHS:-/__waf_health}"

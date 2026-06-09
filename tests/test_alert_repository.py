@@ -20,6 +20,9 @@ def build_alert(
     event_id: str | None = None,
     risk_score: int = 95,
     risk_level: str = "critical",
+    source_ip: str = "45.67.89.10",
+    target: str = "/login",
+    event_timestamp: str = "2026-06-08T12:34:56+00:00",
 ) -> SecurityAlert:
     """
     Build a deterministic alert for repository tests.
@@ -29,6 +32,9 @@ def build_alert(
      event_id - event identifier used by the sample alert
      risk_score - risk score assigned to the sample alert
      risk_level - risk level assigned to the sample alert
+     source_ip - source IP assigned to the sample alert
+     target - target path assigned to the sample alert
+     event_timestamp - event timestamp assigned to the sample alert
 
     Returns:
      Security alert ready to persist in a test database
@@ -40,12 +46,12 @@ def build_alert(
     return SecurityAlert(
         alert_id=alert_id,
         event_id=event_id or f"event-{alert_id}",
-        event_timestamp="2026-06-08T12:34:56+00:00",
+        event_timestamp=event_timestamp,
         attack_type="SQL Injection",
         risk_score=risk_score,
         risk_level=risk_level,
-        source_ip="45.67.89.10",
-        target="/login",
+        source_ip=source_ip,
+        target=target,
         confidence=0.9,
         evidence=["matched SQL injection pattern"],
         mitre_attack=[
@@ -237,6 +243,90 @@ def test_alert_repository_list_recent_deduplicates_historical_event_ids(tmp_path
     assert alerts[0].risk_score == 95
 
 
+def test_alert_repository_aggregates_repeated_alerts(tmp_path: Path) -> None:
+    """
+    Verify repeated same-source target attack alerts merge into one aggregate.
+
+    Parameters:
+     tmp_path - pytest temporary directory used to store the database
+
+    Returns:
+     None
+
+    Raises:
+     None
+    """
+
+    repository, session = build_repository(tmp_path)
+
+    try:
+        repository.save(
+            build_alert(
+                alert_id="alert-first",
+                event_id="event-first",
+                event_timestamp="2026-06-08T12:00:00+00:00",
+            )
+        )
+        saved = repository.save(
+            build_alert(
+                alert_id="alert-second",
+                event_id="event-second",
+                event_timestamp="2026-06-08T12:02:00+00:00",
+            )
+        )
+        records = session.scalars(select(AlertRecord)).all()
+    finally:
+        session.close()
+
+    assert len(records) == 1
+    assert saved.event_count == 2
+    assert saved.event_ids == ["event-first", "event-second"]
+    assert saved.first_seen.startswith("2026-06-08T12:00:00")
+    assert saved.last_seen.startswith("2026-06-08T12:02:00")
+
+
+def test_alert_repository_does_not_increment_count_for_same_event_update(tmp_path: Path) -> None:
+    """
+    Verify a late enrichment update for the same event does not increase event count.
+
+    Parameters:
+     tmp_path - pytest temporary directory used to store the database
+
+    Returns:
+     None
+
+    Raises:
+     None
+    """
+
+    repository, session = build_repository(tmp_path)
+
+    try:
+        repository.save(
+            build_alert(
+                alert_id="alert-fast",
+                event_id="event-same",
+                risk_score=82,
+                risk_level="high",
+            )
+        )
+        saved = repository.save(
+            build_alert(
+                alert_id="alert-llm",
+                event_id="event-same",
+                risk_score=95,
+                risk_level="critical",
+            )
+        )
+        records = session.scalars(select(AlertRecord)).all()
+    finally:
+        session.close()
+
+    assert len(records) == 1
+    assert saved.event_count == 1
+    assert saved.risk_score == 95
+
+
 def test_alert_repository_filters_and_updates_status(tmp_path: Path) -> None:
     """
     Verify repository supports workflow filters and status updates.
@@ -312,6 +402,7 @@ def test_alert_repository_filters_by_risk_level(tmp_path: Path) -> None:
                 alert_id="alert-low",
                 risk_score=25,
                 risk_level="low",
+                target="/search",
             )
         )
         critical_alerts = repository.list_recent(count=10, risk_level="critical")

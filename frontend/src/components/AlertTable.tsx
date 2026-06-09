@@ -44,6 +44,9 @@ export function AlertTable({ alerts, selectedAlertId, onSelect }: AlertTableProp
                 </td>
                 <td>
                   <strong>{alert.attack_type}</strong>
+                  {alert.event_count > 1 ? (
+                    <span className="aggregate-count">x{alert.event_count}</span>
+                  ) : null}
                   <span className="muted mono">{alert.alert_id}</span>
                 </td>
                 <td>
