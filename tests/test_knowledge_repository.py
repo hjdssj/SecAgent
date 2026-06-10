@@ -8,6 +8,62 @@ BACKEND_DIR = ROOT_DIR / "backend"
 sys.path.append(str(BACKEND_DIR))
 
 from app.rag.knowledge_repository import KnowledgeRepository
+from app.rag.vector_indexer import KnowledgeVectorIndexResult
+
+
+class FakeVectorIndexer:
+    """
+    Record knowledge vector indexing calls for repository tests.
+
+    Parameters:
+     result - indexing result returned to the repository
+
+    Returns:
+     Fake vector indexer
+
+    Raises:
+     None
+    """
+
+    def __init__(self, result: KnowledgeVectorIndexResult | None = None) -> None:
+        """
+        Initialize fake vector indexer state.
+
+        Parameters:
+         result - indexing result returned to the repository
+
+        Returns:
+         None
+
+        Raises:
+         None
+        """
+
+        self.result = result or KnowledgeVectorIndexResult(
+            attempted=True,
+            indexed=True,
+            chunks_written=1,
+            status="indexed",
+            reason="Indexed 1 knowledge chunks into vector storage.",
+        )
+        self.sources: list[str] = []
+
+    def index_source(self, source: str) -> KnowledgeVectorIndexResult:
+        """
+        Record the indexed source and return the configured result.
+
+        Parameters:
+         source - source requested for indexing
+
+        Returns:
+         Configured vector indexing result
+
+        Raises:
+         None
+        """
+
+        self.sources.append(source)
+        return self.result
 
 
 def test_knowledge_repository_saves_and_loads_markdown(tmp_path: Path) -> None:
@@ -37,6 +93,8 @@ def test_knowledge_repository_saves_and_loads_markdown(tmp_path: Path) -> None:
     assert result.title == "Demo Knowledge"
     assert result.chunk_count >= 1
     assert result.overwritten is False
+    assert result.vector_indexed is False
+    assert result.vector_status == "embedding_unavailable"
     assert document is not None
     assert "SQL Injection" in document.content
 
@@ -95,3 +153,31 @@ def test_knowledge_repository_validates_upload_input(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError):
         repository.save_document("empty.md", "   ")
+
+
+def test_knowledge_repository_indexes_saved_document_with_configured_indexer(tmp_path: Path) -> None:
+    """
+    Verify saving a document attempts backend vector indexing.
+
+    Parameters:
+     tmp_path - pytest fixture used to create an isolated knowledge directory
+
+    Returns:
+     None
+
+    Raises:
+     None
+    """
+
+    indexer = FakeVectorIndexer()
+    repository = KnowledgeRepository(tmp_path, vector_indexer=indexer)
+
+    result = repository.save_document(
+        filename="vector-demo.md",
+        content="# Vector Demo\n\n## SSRF\n\nmetadata endpoint 169.254.169.254",
+    )
+
+    assert indexer.sources == ["vector-demo.md"]
+    assert result.vector_indexed is True
+    assert result.vector_chunks_written == 1
+    assert result.vector_status == "indexed"

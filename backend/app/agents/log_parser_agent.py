@@ -1,6 +1,7 @@
 import re
 
 from app.models.event import ParsedSecurityEvent, SecurityEvent
+from app.rules.matcher import RuleMatcher
 
 
 class LogParserAgent:
@@ -55,6 +56,22 @@ class LogParserAgent:
         r"(?i)nessus",
     ]
 
+    def __init__(self, rule_matcher: RuleMatcher | None = None) -> None:
+        """
+        Initialize the log parser with a structured rule matcher.
+
+        Parameters:
+         rule_matcher - optional matcher replacement used by tests
+
+        Returns:
+         None
+
+        Raises:
+         None
+        """
+
+        self.rule_matcher = rule_matcher or RuleMatcher()
+
     def parse(self, event: SecurityEvent) -> ParsedSecurityEvent:
         """
         将标准化安全事件解析为攻击分析特征。
@@ -68,6 +85,17 @@ class LogParserAgent:
         Raises:
          None
         """
+
+        rule_result = self.rule_matcher.match(event)
+
+        if rule_result.matched:
+            return ParsedSecurityEvent(
+                event=event,
+                attack_type=rule_result.attack_type,
+                attack_features=rule_result.attack_features,
+                evidence=rule_result.evidence,
+                confidence=rule_result.confidence,
+            )
 
         text = self._build_detection_text(event)
         detections: list[tuple[str, str]] = []

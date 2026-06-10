@@ -6,9 +6,7 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 BACKEND_DIR = ROOT_DIR / "backend"
 sys.path.append(str(BACKEND_DIR))
 
-from app.embedding.client import EmbeddingClient
-from app.milvus.client import MilvusKnowledgeClient
-from app.rag.knowledge_loader import KnowledgeLoader
+from app.rag.vector_indexer import KnowledgeVectorIndexer
 
 
 def rebuild_knowledge_vectors(recreate: bool = False) -> int:
@@ -25,48 +23,10 @@ def rebuild_knowledge_vectors(recreate: bool = False) -> int:
      None
     """
 
-    chunks = KnowledgeLoader().load_chunks()
+    result = KnowledgeVectorIndexer().index_all(recreate=recreate)
 
-    if not chunks:
-        print("No knowledge chunks found.")
-        return 0
-
-    embedding_client = EmbeddingClient()
-
-    if not embedding_client.available():
-        print("Embedding is not configured. Set EMBEDDING_ENABLED=true and credentials.")
-        return 0
-
-    milvus_client = MilvusKnowledgeClient()
-
-    if not milvus_client.available():
-        print("Milvus is not available. Set MILVUS_ENABLED=true and start Milvus.")
-        return 0
-
-    if not milvus_client.ensure_knowledge_collection(recreate=recreate):
-        print("Failed to prepare Milvus knowledge collection.")
-        return 0
-
-    texts = [
-        "\n".join(
-            [
-                chunk.title,
-                chunk.category,
-                " ".join(chunk.tags),
-                chunk.content,
-            ]
-        )
-        for chunk in chunks
-    ]
-    embeddings = embedding_client.embed_texts(texts)
-
-    if len(embeddings) != len(chunks):
-        print("Embedding count does not match chunk count.")
-        return 0
-
-    written = milvus_client.upsert_knowledge_chunks(chunks, embeddings)
-    print(f"written knowledge vectors: {written}")
-    return written
+    print(result.reason)
+    return result.chunks_written
 
 
 def main() -> None:

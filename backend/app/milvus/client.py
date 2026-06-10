@@ -152,6 +152,39 @@ class MilvusKnowledgeClient:
 
         return len(rows)
 
+    def delete_knowledge_by_source(self, source: str) -> bool:
+        """
+        Delete existing knowledge vectors for one source document.
+
+        Parameters:
+         source - source markdown file name
+
+        Returns:
+         True when deletion was attempted successfully or no client is available
+
+        Raises:
+         None
+        """
+
+        client = self._client_or_none()
+
+        if client is None or not source:
+            return False
+
+        escaped = source.replace('"', '\\"')
+        expression = f'source == "{escaped}"'
+
+        try:
+            if hasattr(client, "delete"):
+                client.delete(
+                    collection_name=self.config.knowledge_collection,
+                    filter=expression,
+                )
+        except Exception:
+            return False
+
+        return True
+
     def search_knowledge(
         self,
         query_embedding: list[float],

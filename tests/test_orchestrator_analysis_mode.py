@@ -853,8 +853,8 @@ def test_orchestrator_uses_llm_unknown_classifier_before_decision() -> None:
     event = SecurityEvent(
         source_ip="6.6.6.6",
         path="/fetch",
-        query="url=http://169.254.169.254/latest/meta-data/",
-        url="/fetch?url=http://169.254.169.254/latest/meta-data/",
+        query="callback=http://example.com/status",
+        url="/fetch?callback=http://example.com/status",
         status=403,
     )
 

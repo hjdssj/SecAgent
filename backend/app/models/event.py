@@ -41,6 +41,10 @@ class SecurityEvent(BaseModel):
     waf_rule_id: Optional[str] = None
     waf_message: Optional[str] = None
     raw_log: str = Field(default="")
+    query_params: dict[str, str] = Field(default_factory=dict)
+    headers: dict[str, str] = Field(default_factory=dict)
+    cookies: dict[str, str] = Field(default_factory=dict)
+    body_fields: dict[str, str] = Field(default_factory=dict)
 
 
 class ParsedSecurityEvent(BaseModel):

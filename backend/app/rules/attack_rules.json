@@ -1,0 +1,164 @@
+[
+  {
+    "rule_id": "attack.command.basic",
+    "attack_type": "Command Injection",
+    "enabled": true,
+    "priority": 100,
+    "confidence": 0.85,
+    "source": "builtin",
+    "provenance": "manual",
+    "reference": "Java command execution and OWASP CRS 932 style command injection indicators",
+    "standards": {
+      "mitre": ["T1059"],
+      "cwe": ["CWE-78"],
+      "owasp_top10": ["A03:2021-Injection"],
+      "crs": ["932"]
+    },
+    "match": {
+      "fields": ["url", "query", "waf_message"],
+      "any_patterns": [
+        ";\\s*(cat|whoami|id|curl|wget)\\b",
+        "\\|\\s*(cat|whoami|id|curl|wget)\\b",
+        "\\$\\([^)]+\\)"
+      ],
+      "waf_rule_prefixes": ["932"]
+    }
+  },
+  {
+    "rule_id": "attack.sqli.basic",
+    "attack_type": "SQL Injection",
+    "enabled": true,
+    "priority": 90,
+    "confidence": 0.85,
+    "source": "builtin",
+    "provenance": "manual",
+    "reference": "OWASP CRS 942 SQL Injection",
+    "standards": {
+      "mitre": ["T1190"],
+      "cwe": ["CWE-89"],
+      "owasp_top10": ["A03:2021-Injection"],
+      "crs": ["942"]
+    },
+    "match": {
+      "fields": ["url", "query", "waf_message"],
+      "any_patterns": [
+        "union\\s+select",
+        "or\\s+['\\\"]?1['\\\"]?\\s*=\\s*['\\\"]?1",
+        "sleep\\s*\\(",
+        "benchmark\\s*\\(",
+        "information_schema"
+      ],
+      "waf_rule_prefixes": ["942"]
+    }
+  },
+  {
+    "rule_id": "attack.path_traversal.basic",
+    "attack_type": "Path Traversal",
+    "enabled": true,
+    "priority": 80,
+    "confidence": 0.82,
+    "source": "builtin",
+    "provenance": "manual",
+    "reference": "OWASP CRS 930 Path Traversal",
+    "standards": {
+      "mitre": ["T1190"],
+      "cwe": ["CWE-22"],
+      "owasp_top10": ["A01:2021-Broken Access Control"],
+      "crs": ["930"]
+    },
+    "match": {
+      "fields": ["url", "query", "query.file", "body.file", "waf_message"],
+      "any_patterns": [
+        "\\.\\./",
+        "\\.\\.\\\\",
+        "/etc/passwd",
+        "boot\\.ini",
+        "win\\.ini",
+        "directory traversal",
+        "path traversal"
+      ],
+      "waf_rule_prefixes": ["930"]
+    }
+  },
+  {
+    "rule_id": "attack.xss.basic",
+    "attack_type": "XSS",
+    "enabled": true,
+    "priority": 70,
+    "confidence": 0.8,
+    "source": "builtin",
+    "provenance": "manual",
+    "reference": "OWASP CRS 941 XSS",
+    "standards": {
+      "mitre": ["T1189"],
+      "cwe": ["CWE-79"],
+      "owasp_top10": ["A03:2021-Injection"],
+      "crs": ["941"]
+    },
+    "match": {
+      "fields": ["url", "query", "waf_message"],
+      "any_patterns": [
+        "<script",
+        "javascript:",
+        "onerror\\s*=",
+        "onload\\s*=",
+        "alert\\s*\\(",
+        "cross site scripting",
+        "\\bxss\\b"
+      ],
+      "waf_rule_prefixes": ["941"]
+    }
+  },
+  {
+    "rule_id": "attack.scanner.user_agent",
+    "attack_type": "Automated Scanner",
+    "enabled": true,
+    "priority": 20,
+    "confidence": 0.65,
+    "source": "builtin",
+    "provenance": "manual",
+    "reference": "OWASP CRS 913 Scanner Detection",
+    "standards": {
+      "mitre": ["T1595"],
+      "cwe": [],
+      "owasp_top10": [],
+      "crs": ["913"]
+    },
+    "match": {
+      "fields": ["user_agent", "waf_message"],
+      "any_patterns": [
+        "sqlmap",
+        "nikto",
+        "acunetix",
+        "nessus"
+      ],
+      "waf_rule_prefixes": ["913"]
+    }
+  },
+  {
+    "rule_id": "attack.ssrf.url_parameter",
+    "attack_type": "SSRF",
+    "enabled": true,
+    "priority": 85,
+    "confidence": 0.82,
+    "source": "builtin",
+    "provenance": "manual",
+    "reference": "Runtime URL access-path SSRF indicators",
+    "standards": {
+      "mitre": ["T1190"],
+      "cwe": ["CWE-918"],
+      "owasp_top10": ["A10:2021-Server-Side Request Forgery"],
+      "crs": []
+    },
+    "match": {
+      "fields": ["query.url", "query.target", "body.url", "url", "query"],
+      "any_patterns": [
+        "169\\.254\\.169\\.254",
+        "127\\.0\\.0\\.1",
+        "localhost",
+        "metadata\\.google\\.internal",
+        "0\\.0\\.0\\.0"
+      ]
+    }
+  }
+]

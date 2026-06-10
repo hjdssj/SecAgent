@@ -1,4 +1,6 @@
+from app.intel.config import ThreatIntelConfig
 from app.intel.local_intel_store import LocalIntelStore
+from app.intel.providers import AbuseIPDBClient, VirusTotalClient
 from app.intel.schemas import ThreatIntelResult
 from app.models.alert import SecurityAlert
 
@@ -8,7 +10,9 @@ class ThreatIntelAgent:
     Enrich security alerts with local threat intelligence context.
 
     Parameters:
-     intel_store - local intelligence store used for source IP lookup
+     intel_store - local intelligence store used for fallback source IP lookup
+     abuseipdb_client - optional AbuseIPDB client used by tests
+     virustotal_client - optional VirusTotal client used by tests
 
     Returns:
      A threat intelligence agent for alert enrichment
@@ -17,12 +21,19 @@ class ThreatIntelAgent:
      None
     """
 
-    def __init__(self, intel_store: LocalIntelStore | None = None) -> None:
+    def __init__(
+        self,
+        intel_store: LocalIntelStore | None = None,
+        abuseipdb_client: AbuseIPDBClient | None = None,
+        virustotal_client: VirusTotalClient | None = None,
+    ) -> None:
         """
         Initialize the threat intelligence agent.
 
         Parameters:
-         intel_store - local intelligence store used for source IP lookup
+         intel_store - local intelligence store used for fallback source IP lookup
+         abuseipdb_client - optional AbuseIPDB client used by tests
+         virustotal_client - optional VirusTotal client used by tests
 
         Returns:
          None
@@ -32,10 +43,13 @@ class ThreatIntelAgent:
         """
 
         self.intel_store = intel_store or LocalIntelStore()
+        config = ThreatIntelConfig()
+        self.abuseipdb_client = abuseipdb_client or AbuseIPDBClient(config)
+        self.virustotal_client = virustotal_client or VirusTotalClient(config)
 
     def lookup(self, source_ip: str) -> ThreatIntelResult:
         """
-        Look up threat intelligence for a source IP.
+        Look up threat intelligence for a source IP from real providers and local fallback.
 
         Parameters:
          source_ip - source IP address to look up
@@ -47,7 +61,16 @@ class ThreatIntelAgent:
          None
         """
 
-        return self.intel_store.lookup_ip(source_ip)
+        results = [
+            result
+            for result in [
+                self.abuseipdb_client.lookup_ip(source_ip),
+                self.virustotal_client.lookup_ip(source_ip),
+                self.intel_store.lookup_ip(source_ip),
+            ]
+            if result is not None
+        ]
+        return self._merge_results(source_ip, results)
 
     def enrich_alert(
         self,
@@ -111,7 +134,7 @@ class ThreatIntelAgent:
         tags = ", ".join(intel.tags) if intel.tags else "none"
         return (
             f"威胁情报：源 IP {intel.source_ip} 信誉为 {intel.reputation}，"
-            f"情报风险分 {intel.risk_score}，标签：{tags}"
+            f"情报风险分 {intel.risk_score}，来源：{intel.source}，标签：{tags}"
         )
 
     def _recommendations(self, intel: ThreatIntelResult) -> list[str]:
@@ -174,6 +197,89 @@ class ThreatIntelAgent:
             f"- 说明：{intel.description}\n"
             f"- 风险分调整：+{score_delta}\n"
         )
+
+    def _merge_results(
+        self,
+        source_ip: str,
+        results: list[ThreatIntelResult],
+    ) -> ThreatIntelResult:
+        """
+        Merge multiple provider results into one threat intelligence verdict.
+
+        Parameters:
+         source_ip - source IP address looked up
+         results - provider and fallback intelligence results
+
+        Returns:
+         Combined threat intelligence result
+
+        Raises:
+         None
+        """
+
+        if not results:
+            return ThreatIntelResult(source_ip=source_ip)
+
+        meaningful_results = [
+            result
+            for result in results
+            if result.source != "local_mock" or result.risk_score > 0 or result.reputation != "unknown"
+        ]
+        merged_results = meaningful_results or results
+        risk_score = max(result.risk_score for result in merged_results)
+        sources = [result.source for result in merged_results if result.source]
+        descriptions = [
+            f"{result.source}: {result.description}"
+            for result in merged_results
+            if result.description
+        ]
+        tags: list[str] = []
+
+        for result in merged_results:
+            for tag in result.tags:
+                if tag not in tags:
+                    tags.append(tag)
+
+        return ThreatIntelResult(
+            source_ip=source_ip,
+            reputation=self._reputation_from_results(merged_results, risk_score),
+            risk_score=risk_score,
+            tags=tags,
+            source="+".join(dict.fromkeys(sources)) or "unknown",
+            description=" | ".join(descriptions) or "No threat intelligence record found.",
+        )
+
+    def _reputation_from_results(
+        self,
+        results: list[ThreatIntelResult],
+        risk_score: int,
+    ) -> str:
+        """
+        Build the final reputation label from provider results and score.
+
+        Parameters:
+         results - provider and fallback intelligence results
+         risk_score - final merged risk score
+
+        Returns:
+         Reputation label
+
+        Raises:
+         None
+        """
+
+        reputations = {result.reputation for result in results}
+
+        if "malicious" in reputations or risk_score >= 75:
+            return "malicious"
+
+        if "suspicious" in reputations or risk_score >= 25:
+            return "suspicious"
+
+        if "clean" in reputations:
+            return "clean"
+
+        return "unknown"
 
     def _score_delta(self, intel: ThreatIntelResult) -> int:
         """

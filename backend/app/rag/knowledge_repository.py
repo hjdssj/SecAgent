@@ -3,6 +3,7 @@ from pathlib import Path
 
 from app.rag.knowledge_loader import DEFAULT_KNOWLEDGE_DIR, KnowledgeLoader
 from app.rag.schemas import KnowledgeDocument, KnowledgeUploadResponse
+from app.rag.vector_indexer import KnowledgeVectorIndexer
 
 
 class KnowledgeRepository:
@@ -19,12 +20,17 @@ class KnowledgeRepository:
      None
     """
 
-    def __init__(self, knowledge_dir: Path = DEFAULT_KNOWLEDGE_DIR) -> None:
+    def __init__(
+        self,
+        knowledge_dir: Path = DEFAULT_KNOWLEDGE_DIR,
+        vector_indexer: KnowledgeVectorIndexer | None = None,
+    ) -> None:
         """
         Initialize the knowledge repository.
 
         Parameters:
          knowledge_dir - directory containing markdown knowledge documents
+         vector_indexer - optional vector indexer replacement used by tests
 
         Returns:
          None
@@ -34,6 +40,7 @@ class KnowledgeRepository:
         """
 
         self.knowledge_dir = knowledge_dir
+        self.vector_indexer = vector_indexer
 
     def list_documents(self) -> list[KnowledgeDocument]:
         """
@@ -115,13 +122,9 @@ class KnowledgeRepository:
 
         file_path.write_text(content, encoding="utf-8")
         document = self.get_document(safe_name)
-        chunk_count = len(
-            [
-                chunk
-                for chunk in KnowledgeLoader(self.knowledge_dir).load_chunks()
-                if chunk.source == safe_name
-            ]
-        )
+        loader = KnowledgeLoader(self.knowledge_dir)
+        chunks = [chunk for chunk in loader.load_chunks() if chunk.source == safe_name]
+        vector_result = self._index_saved_document(loader, safe_name)
 
         return KnowledgeUploadResponse(
             source=safe_name,
@@ -129,12 +132,12 @@ class KnowledgeRepository:
             title=document.title if document else file_path.stem,
             category=document.category if document else "general",
             tags=document.tags if document else [],
-            chunk_count=chunk_count,
+            chunk_count=len(chunks),
             overwritten=existed and overwrite,
-            message=(
-                "Knowledge document saved. BM25 retrieval is available immediately. "
-                "Run scripts/rebuild_knowledge_vectors.py --recreate to refresh Milvus vectors."
-            ),
+            vector_indexed=vector_result.indexed,
+            vector_chunks_written=vector_result.chunks_written,
+            vector_status=vector_result.status,
+            message=self._upload_message(vector_result.reason),
         )
 
     def safe_filename(self, filename: str) -> str:
@@ -169,3 +172,44 @@ class KnowledgeRepository:
             safe_name = f"{safe_name}.md"
 
         return safe_name
+
+    def _index_saved_document(
+        self,
+        loader: KnowledgeLoader,
+        source: str,
+    ):
+        """
+        Index a saved document into vector storage when configured.
+
+        Parameters:
+         loader - loader scoped to the current knowledge directory
+         source - saved markdown source file name
+
+        Returns:
+         Vector indexing result
+
+        Raises:
+         None
+        """
+
+        indexer = self.vector_indexer or KnowledgeVectorIndexer(loader=loader)
+        return indexer.index_source(source)
+
+    def _upload_message(self, vector_reason: str) -> str:
+        """
+        Build a user-facing upload message without exposing storage internals.
+
+        Parameters:
+         vector_reason - backend vector indexing result reason
+
+        Returns:
+         Upload response message
+
+        Raises:
+         None
+        """
+
+        return (
+            "Knowledge document saved. BM25 retrieval is available immediately. "
+            f"{vector_reason}"
+        )

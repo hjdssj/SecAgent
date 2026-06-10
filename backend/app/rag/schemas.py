@@ -61,6 +61,9 @@ class KnowledgeUploadResponse(BaseModel):
      tags - inferred security tags
      chunk_count - number of searchable chunks generated from the document
      overwritten - whether an existing file was replaced
+     vector_indexed - whether the saved chunks were written to vector storage
+     vector_chunks_written - number of chunks written to vector storage
+     vector_status - backend vector indexing status
      message - operational note for vector index refresh
 
     Returns:
@@ -77,6 +80,9 @@ class KnowledgeUploadResponse(BaseModel):
     tags: list[str] = Field(default_factory=list)
     chunk_count: int = 0
     overwritten: bool = False
+    vector_indexed: bool = False
+    vector_chunks_written: int = 0
+    vector_status: str = "not_attempted"
     message: str = ""
 
 

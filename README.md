@@ -1,19 +1,19 @@
 # SecRAG Agent
 
-SecRAG Agent is a SOC-oriented security analysis and response demo system. It connects WAF logs, Redis Streams, rule-based attack detection, optional LLM fallback classification for rule-unknown attacks, local RAG security knowledge, threat intelligence, event memory, alert persistence, optional LLM report enhancement, and a React SOC console into one runnable pipeline.
+SecRAG Agent is a SOC-oriented security analysis and response demo system. It connects WAF logs, Redis Streams, structured attack rule matching, optional LLM fallback classification for rule-unknown attacks, local RAG security knowledge, real threat intelligence, event memory, alert persistence, optional LLM report enhancement, and a React SOC console into one runnable pipeline.
 
 ## Highlights
 
 - WAF integration with Nginx + ModSecurity + OWASP CRS.
 - Single-server deployment profile with WAF reverse proxy, collector, consumer, backend, frontend, and Redis.
 - Redis Stream event pipeline for `security:events` and `security:alerts`.
-- Attack detection for SQL Injection, XSS, Path Traversal, Command Injection, scanners, and optional LLM-assisted Unknown fallback.
-- RAG retrieval with structured documents, Query Rewrite, BM25, optional Milvus vector retrieval, citations, and scores.
+- Structured attack rule engine for SQL Injection, XSS, Path Traversal, Command Injection, scanners, and optional LLM-assisted Unknown fallback.
+- RAG retrieval with structured documents, Query Rewrite, BM25, optional Milvus vector retrieval, citations, scores, and retrieval benchmark support.
 - RAG knowledge-base management with document listing, Markdown upload, and a frontend Knowledge page.
 - Enterprise context RAG and AutoTriage for business owner, asset criticality, and review routing.
 - Optional OpenAI-compatible LLM report generation for high-value alerts.
 - SQLite / SQLAlchemy alert persistence with workflow status updates.
-- Local threat intelligence, Redis-backed source IP memory, and optional Milvus long-term analysis memory with similar-event recall.
+- AbuseIPDB / VirusTotal threat intelligence with local fallback, Redis-backed source IP memory, and optional Milvus long-term analysis memory with similar-event recall.
 - White-traffic control with collector-side benign filtering, suspicious `200` preservation, and time-window alert aggregation.
 - FastAPI backend and React SOC dashboard.
 
@@ -29,6 +29,7 @@ Attack traffic
   -> Redis Stream: security:events
   -> event_consumer.py
   -> LogParserAgent
+  -> RuleMatcher + attack_rules.json
   -> LLMUnknownAttackClassifier
   -> DecisionAgent
   -> RAGAgent
@@ -103,11 +104,71 @@ Late LLM enrichment for the same `event_id` updates the existing alert without i
 Backend: FastAPI, Pydantic, Redis, SQLAlchemy, SQLite
 Collector: Python, ModSecurity JSON audit log parser
 WAF: Nginx, ModSecurity, OWASP CRS
+Rules: structured JSON attack rules, runtime feature extraction, WAF rule prefix matching, regex field matching
 RAG: structured Markdown knowledge base, Query Rewrite, BM25, optional Milvus vector retrieval, HybridRetriever, citation output
 LLM: optional OpenAI-compatible chat completions for Unknown fallback classification and analyst report enhancement
+Threat Intel: AbuseIPDB, VirusTotal, local fallback records
 Frontend: React, TypeScript, Vite, lucide-react, react-markdown
 Infrastructure: Docker Compose
 ```
+
+## Structured Attack Rule Engine
+
+Attack detection is driven by structured JSON rules in `backend/app/rules/attack_rules.json`. `LogParserAgent` first calls `RuleMatcher`; if no rule matches, it falls back to the older regex parser.
+
+Rules support:
+
+```text
+rule_id
+attack_type
+enabled
+priority
+confidence
+source
+provenance
+reference
+standards.mitre
+standards.cwe
+standards.owasp_top10
+standards.crs
+match.fields
+match.any_patterns
+match.waf_rule_ids
+match.waf_rule_prefixes
+match.required_indicators
+```
+
+`RuleMatcher` extracts both flat event fields and access-path fields:
+
+```text
+url
+path
+query
+user_agent
+waf_rule_id
+waf_message
+query.<name>
+headers.<name>
+cookies.<name>
+body.<name>
+```
+
+This allows rules such as `query.file` for path traversal or `query.url` for SSRF, instead of only searching the whole raw URL string.
+
+Current built-in rules cover:
+
+```text
+attack.sqli.basic
+attack.xss.basic
+attack.path_traversal.basic
+attack.command.basic
+attack.scanner.user_agent
+attack.ssrf.url_parameter
+```
+
+When multiple rules match, the highest-priority rule becomes the primary attack type, while all matched rule IDs remain in `attack_features` and evidence. Rule evidence includes rule source, provenance, references, and mapped standards such as MITRE ATT&CK, CWE, OWASP Top 10, and OWASP CRS.
+
+Rules are validated at load time. Invalid regex patterns, duplicate `rule_id` values, missing match conditions, and malformed MITRE / CWE / CRS identifiers fail fast during startup or tests.
 
 ## Single-Server Deployment
 
@@ -236,6 +297,7 @@ backend/app/
   models/       # Pydantic event and alert models
   rag/          # structured RAG retrieval, BM25, hybrid retrieval, query rewrite
                 # and local knowledge document upload helpers
+  rules/        # structured attack rule engine and builtin JSON rules
   embedding/    # optional OpenAI-compatible embedding client
   milvus/       # optional Milvus vector storage helpers
   repositories/ # database persistence repositories
@@ -287,7 +349,23 @@ python scripts\rebuild_knowledge_vectors.py --recreate
 
 If Milvus or embedding is unavailable, `HybridRetriever` automatically falls back to BM25.
 
-Markdown documents can be added from the frontend `Knowledge` page or through `/api/knowledge/documents`. Uploaded documents are written to `backend/app/data/knowledge_base/`. BM25 retrieval becomes available in the current API process after the RAG cache refresh; Milvus vector retrieval still requires rebuilding the vector index with `scripts/rebuild_knowledge_vectors.py --recreate`.
+Knowledge uploads are backend-only vector aware. When a Markdown document is saved through `/api/knowledge/documents` or `/api/knowledge/documents/upload`, the backend immediately refreshes BM25 and then attempts to index that document's chunks into Milvus. If embedding or Milvus is unavailable, upload still succeeds and retrieval continues with BM25. The rebuild script remains useful for full reindexing after bulk file changes.
+
+To compare BM25-only retrieval with Milvus-enabled hybrid retrieval:
+
+```powershell
+python scripts\benchmark_rag_retrieval.py --top-k 4
+```
+
+For detailed per-query output:
+
+```powershell
+python scripts\benchmark_rag_retrieval.py --top-k 4 --json
+```
+
+If embedding or Milvus is unavailable, the benchmark still reports the BM25 baseline and marks the Milvus group as skipped.
+
+Markdown documents can be added from the frontend `Knowledge` page or through `/api/knowledge/documents`. Uploaded documents are written to `backend/app/data/knowledge_base/`. BM25 retrieval becomes available in the current API process after the RAG cache refresh; Milvus vector indexing is attempted automatically in the backend when configured.
 
 Optional long-term analysis memory can also use Milvus. It stores high-value alert summaries for future similar-event retrieval, while SQLite remains the source of truth for alert status and analyst notes:
 
@@ -300,6 +378,31 @@ LONG_TERM_MEMORY_REQUIRE_ANALYST_NOTE=false
 ```
 
 When enabled, `enriched` and `deep` analyses can retrieve similar historical events from `secagent_analysis_memory` and append them to evidence and `report_markdown`. When disabled, below threshold, or when embedding/Milvus is unavailable, analysis still completes and records skipped workflow steps.
+
+## Real Threat Intelligence
+
+`ThreatIntelAgent` queries real providers when enabled and falls back to local records when providers are disabled or unavailable:
+
+```text
+AbuseIPDB
+VirusTotal
+backend/app/data/intel/threat_ip_mock.json
+```
+
+Configuration:
+
+```text
+ABUSEIPDB_API_KEY=your-key
+VIRUSTOTAL_API_KEY=your-key
+THREAT_INTEL_ABUSEIPDB_ENABLED=true
+THREAT_INTEL_VIRUSTOTAL_ENABLED=true
+THREAT_INTEL_ABUSEIPDB_BASE_URL=https://api.abuseipdb.com/api/v2/check
+THREAT_INTEL_ABUSEIPDB_MAX_AGE_DAYS=90
+THREAT_INTEL_VIRUSTOTAL_BASE_URL=https://www.virustotal.com/api/v3/ip_addresses
+THREAT_INTEL_TIMEOUT_SECONDS=10
+```
+
+The merged result records source, reputation, risk score, tags, and provider descriptions. Threat intelligence currently runs in `deep` analysis mode.
 
 ## Current Status
 
@@ -327,4 +430,7 @@ The project has completed the MVP stages:
 19. Similar historical event recall from Milvus long-term memory
 20. RAG knowledge-base document upload API and frontend Knowledge page
 21. Collector-side white-traffic filtering, suspicious `200` preservation, and alert aggregation for SOC noise control
+22. Real AbuseIPDB / VirusTotal threat intelligence providers with local fallback
+23. RAG retrieval benchmark for BM25-only versus Milvus-enabled hybrid search
+24. Structured attack rule engine inspired by source/sink rule matching
 ```
